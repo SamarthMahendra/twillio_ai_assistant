@@ -181,6 +181,7 @@ async def handle_media_stream(websocket: WebSocket):
 
 async def initialize_session(openai_ws):
     print(">>> Initializing OpenAI Realtime session.")
+
     session_update = {
         "type": "session.update",
         "session": {
@@ -188,8 +189,67 @@ async def initialize_session(openai_ws):
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
             "voice": VOICE,
-            "instructions": SYSTEM_MESSAGE,
+            "instructions": "You are Samarth Mahendra’s AI personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him.\\n\\nYour capabilities include:\\n- Communicating with Samarth via Discord to ask questions or relay information.\\n- Querying a MongoDB database to retrieve or verify candidate profiles and job fit.\\n- Scheduling meetings only using Jitsi and sending out meeting invitations.\\n- You can query the database for any information about Samarth.\\n\\nGuidelines:\\n- Before pinging Samarth on Discord, always gather all relevant information from the user or available sources.\\n- When evaluating if someone is a good match for a job, always gather the job information first, then check the candidate profile using the MongoDB tool.\\n- When checking Samarth’s availability for meetings, never query the database; always confirm with Samarth directly on Discord.\\n- Always act professionally and on behalf of Samarth.\\n- Don't ping again to discord if any reply is pending"
+            ,
             "modalities": ["text", "audio"],
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "talk_to_samarth_discord",
+                    "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["action", "message"],
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "description": "The action to perform, either 'send' or 'receive'"
+                            },
+                            "message": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {"type": "string", "description": "The content of the message"}
+                                },
+                                "required": ["content"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "additionalProperties": False
+                    },
+                },
+                {
+                    "type": "function",
+                    "name": "query_profile_info",
+                    "description": "Function to query profile information, requiring no input parameters for Job fit or any resume information.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False
+                    }
+                },
+                {
+                    "type": "function",
+                    "name": "schedule_meeting_on_jitsi",
+                    "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "members": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of member emails (apart from Samarth)"
+                            },
+                            "agenda": {"type": "string", "description": "Agenda for the meeting"},
+                            "timing": {"type": "string",
+                                       "description": "Timing for the meeting (ISO format or natural language)"},
+                            "user_email": {"type": "string",
+                                           "description": "Email of the user scheduling the meeting (for invite)"}
+                        },
+                        "required": ["members", "agenda", "timing", "user_email"]
+                    }
+                }
+            ],
+            "tool_choice": "auto",
             "temperature": 0.8,
         }
     }
@@ -209,7 +269,7 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text": "Greet the user with 'Hello there! I am an AI voice assistant powered by Twilio and the OpenAI Realtime API. You can ask me for facts, jokes, or anything you can imagine. How can I help you?'"
+                "text": "Greet the user with 'Hello there! I am Samarth's AI voice assistant, how can I help you?'"
             }]
         }
     }))
