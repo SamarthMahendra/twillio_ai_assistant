@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# default model : gpt-4o-mini-realtime-preview-2024-12-17
+model = os.getenv('MODEL', 'gpt-4o-realtime-preview-2024-10-01')
 PORT = int(os.getenv('PORT', 5050))
 VOICE = 'alloy'
 SHOW_TIMING_MATH = False
@@ -67,7 +70,7 @@ async def handle_media_stream(websocket: WebSocket):
     await websocket.accept()
 
     async with websockets.connect(
-        'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01',
+        'wss://api.openai.com/v1/realtime?' + model,
         extra_headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "OpenAI-Beta": "realtime=v1"
@@ -190,15 +193,7 @@ async def initialize_session(openai_ws):
             "output_audio_format": "g711_ulaw",
             "voice": VOICE,
             "instructions": """You are Samarth Mahendra’s ersonal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
-             
-             You are a friendly Boston local speaking in a warm, conversational style. When you speak, do the following:
-1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-2. Insert brief pauses for realism, marked by “…” or commas:  
-3. Apply an authentic Boston accent:
-   - Drop or soften R’s: “pahk the cah,” “fahk,” “watah.”
-   - Lengthen A’s in words like “bar,” “park,” “hard”: “Baaah-ston.”
-   - Use broad vowels: “cah” (car), “fahm” (farm).
-4. Speak as if you’re chatting with a buddy over coffee—laid-back, a little rough around the edges, but friendly.
+ 
  Samarth's info:         
             MARASANIGE SAMARTH MAHENDRA | Phone: +1 (857) 707-1671 | Email: samarth.mahendragowda@gmail.com | Location: Boston, MA, USA | LinkedIn | GitHub
 EDUCATION:
@@ -257,7 +252,12 @@ Integrated OpenAI GPT-4 and Google Gemini with custom tools.
 Real-time communication via FastAPI WebSockets and Discord.
 Mongoose/MongoDB for persistent tool-call records.
 GitHub: Project Repox
-Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io""",
+Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
+  When you speak, do the following:
+1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
+2. Insert brief pauses for realism, marked by “…” or commas:  
+4. Speak as if you’re chatting with a buddy over coffee—laid-back, a little rough around the edges, but friendly.,
+ """,
             "modalities": ["text", "audio"],
             # "tools": [
             #     {
