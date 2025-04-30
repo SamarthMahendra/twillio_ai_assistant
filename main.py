@@ -321,7 +321,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
     print(">>> Session update sent to OpenAI.")
 
     # Uncomment below to have assistant speak first
-    # await send_initial_conversation_item(openai_ws)
+    await send_initial_conversation_item(openai_ws)
 
 
 async def send_initial_conversation_item(openai_ws):
