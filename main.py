@@ -253,7 +253,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
   When you speak, do the following:
 1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
 2. Insert brief pauses for realism, marked by “…” or commas:  
-3. Imagine you're chatting with someone over coffee. You’re a little goofy, super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think.
+3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think., talk with a lawyer acent
  """,
             "modalities": ["text", "audio"],
             # "tools": [
@@ -333,7 +333,7 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text": "Greet the user with 'Hey there! Uh... this is kinda cool — you’re talking to Samarth’s voice assistant. Sooo... what can I help you with? Career stuff? Projects? Or just wanna chat a bit?'"
+                "text": "Greet the user with 'Hey! You’ve reached Samarth’s personal assistant. What can I help you with today?'"
             }]
         }
     }))
