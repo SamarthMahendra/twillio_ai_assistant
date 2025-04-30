@@ -49,9 +49,9 @@ async def handle_incoming_call(request: Request):
     print(f"### Host extracted from request: {host}")
 
     response = VoiceResponse()
-    response.say("Please wait while we connect your call to the A. I. voice assistant, powered by Twilio and the Open-A.I. Realtime API")
+    response.say("Please wait while we connect your call")
     response.pause(length=1)
-    response.say("O.K. you can start talking!")
+    response.say("Connected")
 
     connect = Connect()
     connect.stream(url=f'wss://{host}/media-stream')
