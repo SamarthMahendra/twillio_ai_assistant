@@ -4,7 +4,7 @@ import base64
 import asyncio
 import websockets
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Stream
 from dotenv import load_dotenv
@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-PORT = int(os.getenv('PORT', 5050))
+PORT = int(os.getenv('PORT', 10000))
 
 VOICE = "alloy"
 SYSTEM_MESSAGE = (
@@ -42,7 +42,7 @@ async def handle_incoming_call(request: Request):
     response.pause(length=1)
     response.say("O.K. you can start talking!")
 
-    host = request.url.hostname
+    host = request.headers.get("host")  # ✅ Fix: works on Render and locally
     connect = Connect()
     connect.stream(url=f'wss://{host}/media-stream')
     response.append(connect)
