@@ -14,7 +14,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
-model = os.getenv('MODEL', 'gpt-4o-realtime-preview-2024-10-01')
+model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
 PORT = int(os.getenv('PORT', 5050))
 VOICE = 'alloy'
 SHOW_TIMING_MATH = False
@@ -68,9 +68,9 @@ async def handle_incoming_call(request: Request):
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
     await websocket.accept()
-
+    web_socket_url = "wss://api.openai.com/v1/realtime?" + model
     async with websockets.connect(
-        'wss://api.openai.com/v1/realtime?' + model,
+        web_socket_url,
         extra_headers={
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "OpenAI-Beta": "realtime=v1"
