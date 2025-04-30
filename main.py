@@ -51,7 +51,7 @@ async def handle_incoming_call(request: Request):
     response = VoiceResponse()
     response.say("Please wait while we connect your call")
     response.pause(length=1)
-    response.say("Connected")
+    response.say("Connected, You can talk now")
 
     connect = Connect()
     connect.stream(url=f'wss://{host}/media-stream')
@@ -246,7 +246,7 @@ Intelligent Agent System with Multi-LLM Integration (Apr 2025):
 Integrated OpenAI GPT-4 and Google Gemini with custom tools.
 Real-time communication via FastAPI WebSockets and Discord.
 Mongoose/MongoDB for persistent tool-call records.
-GitHub: Project Repo
+GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io""",
             "modalities": ["text", "audio"],
             # "tools": [
