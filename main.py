@@ -16,7 +16,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
 model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
 PORT = int(os.getenv('PORT', 5050))
-VOICE = 'alloy'
+VOICE = 'coral'
 SHOW_TIMING_MATH = False
 
 SYSTEM_MESSAGE = (
@@ -253,7 +253,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
   When you speak, do the following:
 1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
 2. Insert brief pauses for realism, marked by “…” or commas:  
-4. Speak as if you’re chatting with a buddy over coffee—laid-back, a little rough around the edges, but friendly.,
+3. Imagine you're chatting with someone over coffee. You’re a little goofy, super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think.
  """,
             "modalities": ["text", "audio"],
             # "tools": [
@@ -333,7 +333,7 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text": "Greet the user with 'Hello there! I am Samarth's AI voice assistant, how can I help you?'"
+                "text": "Greet the user with 'Hey there! Uh... this is kinda cool — you’re talking to Samarth’s voice assistant. Sooo... what can I help you with? Career stuff? Projects? Or just wanna chat a bit?'"
             }]
         }
     }))
