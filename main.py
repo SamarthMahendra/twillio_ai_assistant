@@ -68,7 +68,7 @@ async def handle_incoming_call(request: Request):
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
     await websocket.accept()
-    web_socket_url = "wss://api.openai.com/v1/realtime?" + model
+    web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
     async with websockets.connect(
         web_socket_url,
         extra_headers={
