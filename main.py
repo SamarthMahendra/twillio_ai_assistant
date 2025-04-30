@@ -52,9 +52,6 @@ async def handle_incoming_call(request: Request):
     print(f"### Host extracted from request: {host}")
 
     response = VoiceResponse()
-    response.say("Please wait while we connect your call")
-    response.pause(length=1)
-    response.say("Connected, You can talk now")
 
     connect = Connect()
     connect.stream(url=f'wss://{host}/media-stream')
