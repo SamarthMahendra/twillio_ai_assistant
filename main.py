@@ -45,13 +45,73 @@ async def media_stream(websocket: WebSocket):
     # Initialize Gemini client
     client = genai.Client(api_key=GEMINI_API_KEY)
     config = types.LiveConnectConfig(
-        system_instruction=types.Content(
-            parts=[
+        system_instruction=types.Content(parts=[
                 types.Part(
                     text="""
-                    You are a helpful AI assistant. When you first hear someone say hello, greet them warmly, 
-                    introduce yourself, and ask how you can help them today. Be friendly and conversational.
-                    """
+                 You are Samarth personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
+ Samarth's info:         
+            MARASANIGE SAMARTH MAHENDRA | Phone: +1 (857) 707-1671 | Email: samarth.mahendragowda@gmail.com | Location: Boston, MA, USA | LinkedIn | GitHub
+EDUCATION:
+Northeastern University, Boston, MA — Master’s in Computer Science (Jan 2024 – Dec 2025). Relevant coursework: Programming Design Paradigm, Database Management Systems, Algorithms, Natural Language Processing, Machine Learning, Foundation of Software Engineering, Mobile App Development.
+Dayananda Sagar College of Engineering, Bengaluru, India — Bachelor’s in Computer Science (Aug 2018 – Jul 2022).
+SKILLS:
+Languages: Python, Java, C/C++, JavaScript, TypeScript, NoSQL
+Frameworks/Libraries: Django REST Framework, Flask, React.js
+Databases: PostgreSQL, Redis, MongoDB, Elasticsearch, ChromaDB
+Cloud/DevOps: AWS, Terraform, Docker, Kubernetes, Prometheus, Datadog, Celery
+Tools/Platforms: Git, Linux/Unix, Puppeteer, LLM Integration
+Concepts: Microservices, Data Modeling, REST APIs, System Design, Distributed Systems, Problem Solving
+PROFESSIONAL EXPERIENCE:
+Draup, Bengaluru, India — Associate Software Development Engineer (Aug 2022 – Nov 2023):
+Maintained core platform features (digital tech stack, outsourcing, customer, and university pages).
+Designed internal dynamic query generation framework for real-time aggregation, improving chatbot performance by 60% and reducing entity development time by 80%.
+Revamped filters with logical operator flexibility and nested filtering (e.g., "(a AND b) OR c").
+Built 100+ modular Python/Django APIs across platform services.
+Implemented subscription-based access control system.
+Migrated APIs from PostgreSQL to Elasticsearch for real-time aggregation—achieved 5× faster response time.
+Used query optimization (partitioning, restructuring, indexing, views) to improve execution by 400% and reduce ops cost by 50%.
+Monitored platform health with Datadog and AWS CloudWatch, reducing downtime from 4% to 1% and improving issue resolution by 75%.
+Draup, Bengaluru, India — Associate Software Development Engineer Intern (Apr 2022 – Jun 2022):
+Debugged APIs using Datadog, reducing issue resolution time by 30%.
+Added image caching, reducing image load times by 70%.
+Wrote automated DB cleanup scripts to improve efficiency by 25%.
+PROJECTS & OUTSIDE EXPERIENCE:
+Open Jobs - Analytics (Dec 2024 – Present), Boston, MA:
+Inspired by Levels.fyi; aggregates 500+ job postings.
+Built producer-consumer system with Celery, monitored via Prometheus and Grafana (99.9% uptime).
+Used Playwright & Puppeteer to scrape 1000+ daily data points.
+Developed Python reverse proxy with router port-forwarding, reducing latency by 40%.
+Automated HTML/CSS selector extraction using LLMs, onboarding new companies 90% faster.
+LinkedIn Assist (LLM-powered Bot) (Remote):
+Built Chrome extension (Flask backend via CodeSandbox) to filter LinkedIn jobs using natural language prompts.
+Used GPT-3.5 for entity extraction and boolean query support (AND, OR, NOT), mimicking LinkedIn filters.
+Myocardium Wall Motion & Thickness Map (Patent Pending) — App No: 202341086278 (India), Bengaluru (Nov 2021 – Sep 2023):
+Mapped cine-series MRI scans for heart wall motion, fibrosis, and thickness during systole/diastole.
+Used custom algorithms for wall thickness and ambiguous zone measurements, improving precision by 50%.
+Parallelized with NumPy and multiprocessing, achieving 60× faster execution.
+Bike Rental System (Feb 2024 – Apr 2024), Boston, MA:
+Built full-stack system (React.js, Django, MySQL) deployed on Azure, Digital Ocean, Netlify.
+Added Redis caching and Datadog monitoring.
+Used JWT for secure login and protected resources.
+Stock Market Simulation App (Feb 2024 – Apr 2024), Boston, MA:
+Java MVC system managing stock investments with buy/sell tracking.
+Integrated APIs and data visualization (line/bar charts, moving averages, gain/loss trends).
+StackOverflow Clone (Feb 2025 – Apr 2025):
+Full-stack Q&A platform with React frontend and Node.js/Express backend using TypeScript.
+Followed MVC architecture; used Facade, Strategy, Validator, Factory patterns.
+Built end-to-end & integration tests using Jest and Cypress.
+Modern responsive UI with React Context and theme support.
+Skills: TypeScript, JavaScript, React.js, Node.js, MongoDB, Cypress, Jest, CodeQL, DevOps, Full-stack.
+Intelligent Agent System with Multi-LLM Integration (Apr 2025):
+Integrated OpenAI GPT-4 and Google Gemini with custom tools.
+Real-time communication via FastAPI WebSockets and Discord.
+Mongoose/MongoDB for persistent tool-call records.
+GitHub: Project Repox
+Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
+  When you speak, do the following:
+1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
+2. Insert brief pauses for realism, marked by “…” or commas:  
+3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think."""
                 )
             ]
         ),
@@ -60,83 +120,55 @@ async def media_stream(websocket: WebSocket):
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
             )
-        )
+        ),
     )
+
+    # twist: store the Twilio stream SID so we can send back our audio
     stream_sid = None
 
-    # Wait for Twilio to establish the stream and get stream SID
-    try:
-        while stream_sid is None:
-            msg = await websocket.receive_text()
-            data = json.loads(msg)
-            if data.get("event") == "start":
-                stream_sid = data["start"]["streamSid"]
-                print(f"Stream started: {stream_sid}")
-                break
-    except Exception as e:
-        print(f"Error during stream initialization: {e}")
-        await websocket.close()
-        return
-
-    # Generate dummy "hello" PCM audio (silent audio with a simple greeting flag)
-    # This is a simple approach - create a short silent PCM audio sample
-    # We're using this as a trigger to make Gemini respond first
-    def dummy_hello_audio():
-        # Simple 16-bit silent PCM audio (8000Hz, 500ms)
-        # We'll yield this once to trigger Gemini's greeting
-        yield b'\x00\x00' * 4000  # 500ms of silence at 8kHz (16-bit)
-
-        # We need to exit the generator after sending the initial sample
-        # to allow the real audio stream to take over
-        return
-        yield  # This line is never reached
-
-    # Generator to yield PCM audio from Twilio mu-law stream
     async def twilio_audio_stream():
         nonlocal stream_sid
-
-        # First yield the dummy hello audio to trigger Gemini's greeting
-        print("Sending dummy hello audio to trigger Gemini greeting")
-        for dummy_audio in dummy_hello_audio():
-            yield dummy_audio
-
-        # Then start processing the real audio stream from Twilio
         try:
             while True:
                 msg = await websocket.receive_text()
                 data = json.loads(msg)
-                event = data.get("event")
-                if event == "media":
+                if data["event"] == "start":
+                    stream_sid = data["start"]["streamSid"]
+                elif data["event"] == "media":
                     ulaw = base64.b64decode(data["media"]["payload"])
-                    # Convert from mu-law to 16-bit PCM
                     pcm = audioop.ulaw2lin(ulaw, 2)
                     yield pcm
-                elif event == "stop":
-                    print("Stream stopped by Twilio")
+                elif data["event"] == "stop":
                     break
         except WebSocketDisconnect:
-            print("Twilio WebSocket disconnected in stream generator")
+            pass
 
+    #  ———  HERE’S THE KEY CHANGE ———
     async with client.aio.live.connect(model=MODEL, config=config) as session:
-        try:
-            # Use the stream method that works with the AsyncSession object
-            async for response in session.start_stream(stream=twilio_audio_stream(),
-                                                       mime_type="audio/pcm"):  # type: ignore
-                if getattr(response, 'data', None):
-                    pcm_out = response.data
-                    # Downsample and convert PCM to mu-law for Twilio
-                    pcm_resampled, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
-                    mulaw = audioop.lin2ulaw(pcm_resampled, 2)
-                    payload = base64.b64encode(mulaw).decode('utf-8')
-                    await websocket.send_json({
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {"payload": payload}
-                    })
-        except Exception as e:
-            print(f"[ERROR] gemini_websocket: {e}")
-        finally:
-            await websocket.close()
+        # **send a text turn** so Gemini will generate audio immediately
+        await session.send(
+            input="Hello! This is Samarth’s personal assistant—how can I help you today?",
+            end_of_turn=True
+        )
+
+        # now pipe Twilio’s audio in and Gemini’s audio out
+        async for response in session.start_stream(
+            stream=twilio_audio_stream(),
+            mime_type="audio/pcm"
+        ):
+            if getattr(response, 'data', None):
+                pcm_out = response.data
+                # downsample & µ-law encode for Twilio
+                pcm_rs, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
+                mulaw = audioop.lin2ulaw(pcm_rs, 2)
+                payload = base64.b64encode(mulaw).decode()
+                await websocket.send_json({
+                    "event": "media",
+                    "streamSid": stream_sid,
+                    "media": {"payload": payload}
+                })
+
+    await websocket.close()
 
 
 if __name__ == "__main__":
