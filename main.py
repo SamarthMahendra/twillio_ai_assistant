@@ -124,9 +124,13 @@ talk natutally, conversationally, and casually."""
         ),
     )
 
-    config._data["realtimeInputConfig"] = {
+    # 2) Dump to a plain dict, excluding any None fields
+    config_dict = config.dict(exclude_none=True)
+
+    # 3) Inject the raw JSON for realtimeInputConfig
+    config_dict["realtimeInputConfig"] = {
         "automaticActivityDetection": {
-            "silenceDurationMs": 10000
+            "silenceDurationMs": 10_000
         }
     }
 
