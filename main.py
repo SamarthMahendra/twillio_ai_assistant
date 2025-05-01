@@ -318,10 +318,6 @@ async def handle_media_stream(websocket: WebSocket):
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
             gemini_session = session
             logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
-            # ... rest of the function ...
-
-        logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
-            logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
 
             # Run tasks concurrently: one listens to Twilio, one listens to Gemini
             twilio_task = asyncio.create_task(handle_twilio_to_gemini(websocket, gemini_session, stream_sid))
