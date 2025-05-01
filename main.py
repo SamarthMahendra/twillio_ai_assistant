@@ -127,25 +127,6 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
         logger.error(f"[{stream_sid}] Gemini session is not valid in handle_twilio_to_gemini.")
         return
 
-    # Determine the send method ONCE based on inspection (will fail first time)
-    # This is illustrative; the actual method needs to be found via logs first.
-    send_method = None
-    if hasattr(gemini_session, 'send_realtime_input'): # Check if this exists now
-         send_method = gemini_session.send_realtime_input
-         logger.info(f"[{stream_sid}] Using gemini_session.send_realtime_input")
-    elif hasattr(gemini_session, 'send_client_content'):
-         send_method = gemini_session.send_client_content
-         logger.info(f"[{stream_sid}] Using gemini_session.send_client_content")
-    elif hasattr(gemini_session, 'send'): # Check for generic send
-         send_method = gemini_session.send
-         logger.info(f"[{stream_sid}] Using gemini_session.send")
-    elif hasattr(gemini_session, 'send_bytes'): # Check for send_bytes
-         send_method = gemini_session.send_bytes
-         logger.info(f"[{stream_sid}] Using gemini_session.send_bytes")
-    else:
-         logger.error(f"[{stream_sid}] Could not find a suitable send method on gemini_session.")
-         return # Cannot proceed
-
     try:
         while True:
             message = await twilio_ws.receive_text()
@@ -165,25 +146,26 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
                         decoded_ulaw = base64.b64decode(payload)
                         pcm_audio = ulaw_to_pcm(decoded_ulaw, TWILIO_SAMPLE_RATE, GEMINI_INPUT_SAMPLE_RATE)
                         if pcm_audio:
-                            # *** Use the determined send method ***
-                            if send_method == gemini_session.send_realtime_input:
-                                await send_method(audio=genai_types.Blob(data=pcm_audio, mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}"))
-                            elif send_method == gemini_session.send_client_content:
-                                audio_part = genai_types.Part(inline_data=genai_types.Blob(mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}", data=pcm_audio))
-                                await send_method(turns={"role": "user", "parts": [audio_part]}, turn_complete=False)
-                            elif send_method == gemini_session.send or send_method == gemini_session.send_bytes:
-                                await send_method(pcm_audio) # Send raw bytes
-                            else:
-                                 logger.error(f"[{stream_sid}] No valid send method determined, cannot send audio.")
-                                 break
-
-                            # logger.debug(f"[{stream_sid}] Sent {len(pcm_audio)} bytes PCM to Gemini.")
+                            # *** Use send_client_content with inline_data ***
+                            audio_part = genai_types.Part(
+                                inline_data=genai_types.Blob(
+                                    mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}",
+                                    data=pcm_audio
+                                )
+                            )
+                            # Send audio chunk as part of a user turn, marking turn as incomplete
+                            await gemini_session.send_client_content(
+                                turns={"role": "user", "parts": [audio_part]},
+                                turn_complete=False # Indicate more audio might follow
+                            )
+                            # logger.debug(f"[{stream_sid}] Sent {len(pcm_audio)} bytes PCM to Gemini via send_client_content.")
                         else:
                             logger.warning(f"[{stream_sid}] PCM conversion resulted in empty bytes.")
                     except base64.binascii.Error as b64_error:
                         logger.error(f"[{stream_sid}] Base64 decode error: {b64_error}")
                     except AttributeError as attr_err:
-                         logger.error(f"[{stream_sid}] AttributeError trying send method: {attr_err}. Session object might lack this method.", exc_info=True)
+                         # Catching the specific error we saw before
+                         logger.error(f"[{stream_sid}] AttributeError trying send_client_content: {attr_err}. Session object might lack this method.", exc_info=True)
                          break # Stop trying this method if it fails
                     except Exception as conv_error:
                         logger.error(f"[{stream_sid}] Error during audio conversion/sending: {conv_error}", exc_info=True)
@@ -195,10 +177,12 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
                 logger.debug(f"[{stream_sid}] Received Twilio mark: {mark_name}")
             elif event == "stop":
                 logger.info(f"[{stream_sid}] Twilio stream stopped event received.")
-                # Optional: Signal end of audio stream if needed
-                # if send_method == gemini_session.send_realtime_input:
-                #     try: await send_method(audio_stream_end=True)
-                #     except Exception as end_err: logger.error(f"Error sending audio_stream_end: {end_err}")
+                # Optional: Send a final empty user turn to potentially signal end?
+                # try:
+                #     await gemini_session.send_client_content(turns={"role": "user", "parts": []}, turn_complete=True)
+                #     logger.info(f"[{stream_sid}] Sent final empty turn to Gemini.")
+                # except Exception as send_err:
+                #     logger.error(f"[{stream_sid}] Error sending final empty turn: {send_err}")
                 break # Exit loop on stop event
             else:
                 logger.warning(f"[{stream_sid}] Received unknown Twilio event: {event}, data: {data}")
@@ -365,13 +349,7 @@ async def handle_media_stream(websocket: WebSocket):
             async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
                 gemini_session = session
                 logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
-                # *** ADD INSPECTION LOGGING ***
-                try:
-                     logger.info(f"[{stream_sid}] Gemini session type: {type(session)}")
-                     logger.info(f"[{stream_sid}] Gemini session methods: {dir(session)}")
-                except Exception as inspect_err:
-                     logger.error(f"[{stream_sid}] Error inspecting session object: {inspect_err}")
-                # *** END INSPECTION LOGGING ***
+                # Removed introspection logging
 
                 twilio_task = asyncio.create_task(handle_twilio_to_gemini(websocket, gemini_session, stream_sid))
                 gemini_task = asyncio.create_task(handle_gemini_to_twilio(gemini_session, websocket, stream_sid))
