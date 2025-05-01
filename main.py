@@ -449,18 +449,3 @@ if __name__ == "__main__":
     logger.info(f">>> Starting Gemini Live API proxy server on port {PORT} using model {GEMINI_MODEL}")
     # Use PORT from environment for Render compatibility
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-```
-
-**Key Change:**
-
-1.  **Added Introspection:** Inside the `async with genai_client.aio.live.connect(...)` block, these lines were added:
-    ```python
-    try:
-         logger.info(f"[{stream_sid}] Gemini session type: {type(session)}")
-         logger.info(f"[{stream_sid}] Gemini session methods: {dir(session)}")
-    except Exception as inspect_err:
-         logger.error(f"[{stream_sid}] Error inspecting session object: {inspect_err}")
-    ```
-2.  **Conditional Send Logic:** The `handle_twilio_to_gemini` function now includes placeholder logic to check for potential send methods (`send_realtime_input`, `send_client_content`, `send`, `send_bytes`) and use the first one found. This part will still fail initially, but it's set up to use the correct method once we identify it from the logs.
-
-Please deploy this version. The application will still likely fail with an `AttributeError` when trying to send the first audio chunk, but **check the logs carefully** for the line starting with `Gemini session methods:`. This output will tell us the actual names of the methods available on the `session` object, and we can then update the code to use the correct o
