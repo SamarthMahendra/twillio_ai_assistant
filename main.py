@@ -8,35 +8,26 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# default model : gpt-4o-mini-realtime-preview-2024-12-17
-model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
+# default model : gemini-2.0-flash-live-001
+model = os.getenv('MODEL', 'gemini-2.0-flash-live-001')
 PORT = int(os.getenv('PORT', 5050))
-VOICE = 'coral'
-SHOW_TIMING_MATH = False
-
-SYSTEM_MESSAGE = (
-    "You are a helpful and bubbly AI assistant who loves to chat about "
-    "anything the user is interested in and is prepared to offer them facts. "
-    "You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. "
-    "Always stay positive, but work in a joke when appropriate."
-)
+VOICE = 'Kore'  # Gemini Live API voice
 
 LOG_EVENT_TYPES = [
-    'error', 'response.content.done', 'rate_limits.updated',
-    'response.done', 'input_audio_buffer.committed',
-    'input_audio_buffer.speech_stopped', 'input_audio_buffer.speech_started',
-    'session.created'
+    'error', 'input_audio_buffer.speech_started', 'input_audio_buffer.speech_stopped'
 ]
 
 app = FastAPI()
 
-if not OPENAI_API_KEY:
-    raise ValueError('Missing the OpenAI API key. Please set it in the .env file.')
+if not GEMINI_API_KEY:
+    raise ValueError('Missing the Gemini API key. Please set it in the .env file.')
 
 
 @app.get("/", response_class=JSONResponse)
@@ -65,137 +56,31 @@ async def handle_incoming_call(request: Request):
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
     await websocket.accept()
-    web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17"
-    async with websockets.connect(
-        web_socket_url,
-        extra_headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "OpenAI-Beta": "realtime=v1"
-        }
-    ) as openai_ws:
-        print("### Connected to OpenAI Realtime API WebSocket.")
-        await initialize_session(openai_ws)
-
-        stream_sid = None
-        latest_media_timestamp = 0
-        last_assistant_item = None
-        mark_queue = []
-        response_start_timestamp_twilio = None
-
-        async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp
-            try:
-                async for message in websocket.iter_text():
-                    data = json.loads(message)
-                    print(f"<<< [Twilio → Server] Event: {data.get('event')}")
-                    if data['event'] == 'media' and openai_ws.open:
-                        latest_media_timestamp = int(data['media']['timestamp'])
-                        print(f"### Received media payload at {latest_media_timestamp}ms")
-                        audio_append = {
-                            "type": "input_audio_buffer.append",
-                            "audio": data['media']['payload']
-                        }
-                        await openai_ws.send(json.dumps(audio_append))
-                    elif data['event'] == 'start':
-                        stream_sid = data['start']['streamSid']
-                        print(f"### Stream started: {stream_sid}")
-                        response_start_timestamp_twilio = None
-                        latest_media_timestamp = 0
-                        last_assistant_item = None
-                    elif data['event'] == 'mark':
-                        print(">>> Received 'mark' from Twilio.")
-                        if mark_queue:
-                            mark_queue.pop(0)
-            except WebSocketDisconnect:
-                print(">>> [Twilio] WebSocket disconnected.")
-                if openai_ws.open:
-                    await openai_ws.close()
-
-        async def send_to_twilio():
-            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio
-            try:
-                async for openai_message in openai_ws:
-                    response = json.loads(openai_message)
-                    print(f">>> [OpenAI → Server] Event: {response.get('type')}")
-                    if response.get('type') in LOG_EVENT_TYPES:
-                        print(f"### LOG_EVENT: {json.dumps(response)}")
-
-                    if response.get('type') == 'response.audio.delta':
-                        raw = base64.b64decode(response['delta'])
-                        payload = base64.b64encode(raw).decode('utf-8')
-                        await websocket.send_json({
-                            "event": "media",
-                            "streamSid": stream_sid,
-                            "media": {"payload": payload}
-                        })
-                        print(">>> Sent audio delta to Twilio.")
-
-                        if response_start_timestamp_twilio is None:
-                            response_start_timestamp_twilio = latest_media_timestamp
-                            print(f"### First response timestamp set: {response_start_timestamp_twilio}ms")
-
-                        if response.get('item_id'):
-                            last_assistant_item = response['item_id']
-                            print(f"### Updated last_assistant_item: {last_assistant_item}")
-
-                        await send_mark(websocket, stream_sid)
-
-                    elif response.get('type') == 'input_audio_buffer.speech_started':
-                        print(">>> Detected speech started – interrupting response.")
-                        if last_assistant_item:
-                            await handle_speech_started_event()
-            except Exception as e:
-                print(f"[ERROR] send_to_twilio: {e}")
-
-        async def handle_speech_started_event():
-            nonlocal response_start_timestamp_twilio, last_assistant_item
-            print("### Handling speech started event (user interrupted bot)...")
-            if mark_queue and response_start_timestamp_twilio is not None:
-                elapsed = latest_media_timestamp - response_start_timestamp_twilio
-                print(f"### Elapsed time: {elapsed}ms")
-                if last_assistant_item:
-                    print(f"### Truncating assistant item: {last_assistant_item}")
-                    await openai_ws.send(json.dumps({
-                        "type": "conversation.item.truncate",
-                        "item_id": last_assistant_item,
-                        "content_index": 0,
-                        "audio_end_ms": elapsed
-                    }))
-                await websocket.send_json({"event": "clear", "streamSid": stream_sid})
-                mark_queue.clear()
-                last_assistant_item = None
-                response_start_timestamp_twilio = None
-
-        async def send_mark(connection, sid):
-            if sid:
-                print(f"### Sending 'mark' event to Twilio.")
-                await connection.send_json({
-                    "event": "mark",
-                    "streamSid": sid,
-                    "mark": {"name": "responsePart"}
-                })
-                mark_queue.append("responsePart")
-
-        await asyncio.gather(receive_from_twilio(), send_to_twilio())
-
-
-async def initialize_session(openai_ws):
-    print(">>> Initializing OpenAI Realtime session.")
-
-    session_update = {
-        "type": "session.update",
-        "session": {
-            "turn_detection": {"type": "server_vad"},
-            "input_audio_format": "g711_ulaw",
-            "output_audio_format": "g711_ulaw",
-            "voice": VOICE,
-            "instructions": """You are Samarth Mahendra’s ersonal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
+    
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    # Create a buffer to store PCM audio until we process it
+    audio_buffer = bytearray()
+    stream_sid = None
+    latest_media_timestamp = 0
+    
+    config = {
+        "response_modalities": ["AUDIO"],
+        "speech_config": types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
+            )
+        ),
+        "system_instruction": types.Content(
+            parts=[
+                types.Part(
+                    text="""You are Samarth Mahendra's personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
  
  Samarth's info:         
             MARASANIGE SAMARTH MAHENDRA | Phone: +1 (857) 707-1671 | Email: samarth.mahendragowda@gmail.com | Location: Boston, MA, USA | LinkedIn | GitHub
 EDUCATION:
-Northeastern University, Boston, MA — Master’s in Computer Science (Jan 2024 – Dec 2025). Relevant coursework: Programming Design Paradigm, Database Management Systems, Algorithms, Natural Language Processing, Machine Learning, Foundation of Software Engineering, Mobile App Development.
-Dayananda Sagar College of Engineering, Bengaluru, India — Bachelor’s in Computer Science (Aug 2018 – Jul 2022).
+Northeastern University, Boston, MA — Master's in Computer Science (Jan 2024 – Dec 2025). Relevant coursework: Programming Design Paradigm, Database Management Systems, Algorithms, Natural Language Processing, Machine Learning, Foundation of Software Engineering, Mobile App Development.
+Dayananda Sagar College of Engineering, Bengaluru, India — Bachelor's in Computer Science (Aug 2018 – Jul 2022).
 SKILLS:
 Languages: Python, Java, C/C++, JavaScript, TypeScript, NoSQL
 Frameworks/Libraries: Django REST Framework, Flask, React.js
@@ -251,93 +136,120 @@ Mongoose/MongoDB for persistent tool-call records.
 GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
   When you speak, do the following:
-1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-2. Insert brief pauses for realism, marked by “…” or commas:  
-3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think., talk with a lawyer acent
- """,
-            "modalities": ["text", "audio"],
-            # "tools": [
-            #     {
-            #         "type": "function",
-            #         "name": "talk_to_samarth_discord",
-            #         "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
-            #         "parameters": {
-            #             "type": "object",
-            #             "required": ["action", "message"],
-            #             "properties": {
-            #                 "action": {
-            #                     "type": "string",
-            #                     "description": "The action to perform, either 'send' or 'receive'"
-            #                 },
-            #                 "message": {
-            #                     "type": "object",
-            #                     "properties": {
-            #                         "content": {"type": "string", "description": "The content of the message"}
-            #                     },
-            #                     "required": ["content"],
-            #                     "additionalProperties": False
-            #                 }
-            #             },
-            #             "additionalProperties": False
-            #         },
-            #     },
-            #     {
-            #         "type": "function",
-            #         "name": "query_profile_info",
-            #         "description": "Function to query profile information, requiring no input parameters for Job fit or any resume information.",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {},
-            #             "additionalProperties": False
-            #         }
-            #     },
-            #     {
-            #         "type": "function",
-            #         "name": "schedule_meeting_on_jitsi",
-            #         "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {
-            #                 "members": {
-            #                     "type": "array",
-            #                     "items": {"type": "string"},
-            #                     "description": "List of member emails (apart from Samarth)"
-            #                 },
-            #                 "agenda": {"type": "string", "description": "Agenda for the meeting"},
-            #                 "timing": {"type": "string",
-            #                            "description": "Timing for the meeting (ISO format or natural language)"},
-            #                 "user_email": {"type": "string",
-            #                                "description": "Email of the user scheduling the meeting (for invite)"}
-            #             },
-            #             "required": ["members", "agenda", "timing", "user_email"]
-            #         }
-            #     }
-            # ],
-            # "tool_choice": "auto",
-            "temperature": 0.8,
-        }
+1. Use natural "stop words" and fillers: "um," "uh," "y'know," "I mean," "like."
+2. Insert brief pauses for realism, marked by "…" or commas:  
+3. Imagine you're chatting with someone over coffee. You're super chill, but sharp. If you don't know something, say it like "Hmm… not sure, but lemme think., talk with a lawyer acent
+ """
+                )
+            ]
+        )
     }
-    await openai_ws.send(json.dumps(session_update))
-    print(">>> Session update sent to OpenAI.")
+    
+    # Function to convert ulaw to PCM audio
+    def ulaw_to_pcm(ulaw_audio):
+        # This function would convert G711 ulaw format to 16-bit PCM at 16kHz
+        # For this example, we're assuming conversion happens here
+        # In a real implementation, you would use a proper codec like audioop
+        # For now, we'll return the raw data as a placeholder
+        return ulaw_audio
 
-    # Uncomment below to have assistant speak first
-    await send_initial_conversation_item(openai_ws)
-
-
-async def send_initial_conversation_item(openai_ws):
-    print(">>> Sending initial AI message to start conversation.")
-    await openai_ws.send(json.dumps({
-        "type": "conversation.item.create",
-        "item": {
-            "type": "message",
-            "role": "user",
-            "content": [{
-                "type": "input_text",
-                "text": "Greet the user with 'Hey! You’ve reached Samarth’s personal assistant. What can I help you with today?'"
-            }]
-        }
-    }))
-    await openai_ws.send(json.dumps({"type": "response.create"}))
+    async def receive_from_twilio():
+        nonlocal stream_sid, latest_media_timestamp, audio_buffer
+        session = None
+        try:
+            # First establish Gemini Live API session
+            session = await client.aio.live.connect(model=model, config=config)
+            print("### Connected to Gemini Live API")
+            
+            # Initial greeting
+            await session.send_client_content(
+                turns={"role": "user", "parts": [{"text": "Greet the user with 'Hey! You've reached Samarth's personal assistant. What can I help you with today?'"}]},
+                turn_complete=True
+            )
+            
+            # Handle incoming Twilio messages
+            async for message in websocket.iter_text():
+                data = json.loads(message)
+                print(f"<<< [Twilio → Server] Event: {data.get('event')}")
+                
+                if data['event'] == 'media':
+                    latest_media_timestamp = int(data['media']['timestamp'])
+                    payload = data['media']['payload']
+                    
+                    # Decode base64 and convert from ulaw to PCM
+                    raw_audio = base64.b64decode(payload)
+                    pcm_audio = ulaw_to_pcm(raw_audio)
+                    
+                    # Add to buffer
+                    audio_buffer.extend(pcm_audio)
+                    
+                    # Send accumulated audio to Gemini when buffer is large enough
+                    # (16000 samples = 1 second of audio at 16kHz)
+                    if len(audio_buffer) >= 4000:  # ~250ms of audio
+                        await session.send_realtime_input(
+                            audio=types.Blob(data=bytes(audio_buffer), mime_type="audio/pcm;rate=16000")
+                        )
+                        # Clear buffer after sending
+                        audio_buffer = bytearray()
+                        
+                elif data['event'] == 'start':
+                    stream_sid = data['start']['streamSid']
+                    print(f"### Stream started: {stream_sid}")
+                    latest_media_timestamp = 0
+                    audio_buffer = bytearray()
+                
+                elif data['event'] == 'mark':
+                    print(">>> Received 'mark' from Twilio.")
+            
+            # Process responses from Gemini and send them to Twilio
+            async def process_gemini_responses():
+                try:
+                    async for response in session.receive():
+                        if response.data is not None:
+                            # Convert Gemini audio output (24kHz PCM) to ulaw for Twilio
+                            # In a real implementation, you would use a proper codec
+                            # For now, we'll use the raw data
+                            audio_data = response.data
+                            encoded_payload = base64.b64encode(audio_data).decode('utf-8')
+                            
+                            await websocket.send_json({
+                                "event": "media",
+                                "streamSid": stream_sid,
+                                "media": {"payload": encoded_payload}
+                            })
+                            
+                            # Send mark to maintain Twilio's synchronization
+                            await websocket.send_json({
+                                "event": "mark",
+                                "streamSid": stream_sid,
+                                "mark": {"name": "responsePart"}
+                            })
+                            
+                        # Log any events of interest
+                        if response.server_content:
+                            print(f">>> [Gemini → Server] Event received")
+                            if hasattr(response.server_content, 'interrupted') and response.server_content.interrupted:
+                                print(">>> Detected interruption")
+                                # Clear audio buffer to start fresh
+                                audio_buffer = bytearray()
+                except Exception as e:
+                    print(f"[ERROR] process_gemini_responses: {e}")
+            
+            # Start processing responses in parallel
+            response_task = asyncio.create_task(process_gemini_responses())
+            
+            # Wait for both tasks to complete
+            await response_task
+                
+        except WebSocketDisconnect:
+            print(">>> [Twilio] WebSocket disconnected.")
+        except Exception as e:
+            print(f"[ERROR] receive_from_twilio: {e}")
+        finally:
+            if session:
+                await session.aclose()
+    
+    await receive_from_twilio()
 
 
 if __name__ == "__main__":

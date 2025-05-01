@@ -12,6 +12,7 @@ click==8.1.7
 exceptiongroup==1.2.2
 fastapi==0.115.0
 frozenlist==1.4.1
+google-generativeai>=0.6.0
 h11==0.14.0
 idna==3.10
 multidict==6.1.0
