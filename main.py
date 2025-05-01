@@ -141,7 +141,6 @@ async def media_stream(websocket: WebSocket):
             print(f"[ERROR] gemini_websocket: {e}")
         finally:
             await websocket.close()
-            await session.aclose()
 
 
 if __name__ == "__main__":
