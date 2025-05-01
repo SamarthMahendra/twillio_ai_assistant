@@ -275,22 +275,19 @@ async def handle_media_stream(websocket: WebSocket):
             return
 
         # --- Configure and Connect to Gemini Live API ---
-        # --- Configure and Connect to Gemini Live API ---
-        # --- Configure and Connect to Gemini Live API ---
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
 
-        # *** Use a dictionary for the configuration ***
-        config = {
-            "response_modalities": ["AUDIO"],  # Essential for voice output
-            "speech_config": genai_types.SpeechConfig(
+            # *** Use LiveConnectConfig, but OMIT realtime_input_config ***
+        config = genai_types.LiveConnectConfig(
+            response_modalities=["AUDIO"],  # Essential for voice output
+
+            # Include speech_config if needed (using default here)
+            speech_config=genai_types.SpeechConfig(
                 # Optional: configure voice, language, etc.
             ),
-            "realtime_input_config": {
-                "automatic_activity_detection": {
-                    # Keep empty for defaults
-                }
-            },
-            "system_instruction": genai_types.Content(
+
+            # Include system_instruction
+            system_instruction=genai_types.Content(
                 parts=[
                     genai_types.Part(
                         text=(
@@ -300,23 +297,20 @@ async def handle_media_stream(websocket: WebSocket):
                     )
                 ]
             ),
-            # Optional: Session resumption / context compression
-        }
 
-        # --- Optional: Clean up config dictionary ---
-        # REMOVED the check for speech_config attributes
+            # Optional: Enable session resumption / context compression if needed
+            # session_resumption=genai_types.SessionResumptionConfig(),
+            # context_window_compression=genai_types.ContextWindowCompressionConfig(
+            #      sliding_window=genai_types.SlidingWindow()
+            # )
+        )
+        logger.info(f"[{stream_sid}] Attempting to connect with LiveConnectConfig: {config}")
 
-        # Example: Only include system_instruction if text is provided
-        # You might still want this check if you conditionally create system_instruction
-        if not config["system_instruction"].parts or not config["system_instruction"].parts[0].text:
-            # Be careful here, ensure parts list exists before indexing
-            if "system_instruction" in config:
-                del config["system_instruction"]
-
-        # Pass the potentially cleaned dictionary directly to connect
-        logger.info(f"[{stream_sid}] Attempting to connect with config: {config}")  # Log the config being sent
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
             gemini_session = session
+            logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
+                    # ... rest of the function ...
+
             logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
 
             # Run tasks concurrently: one listens to Twilio, one listens to Gemini
