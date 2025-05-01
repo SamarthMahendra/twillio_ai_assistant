@@ -277,37 +277,28 @@ async def handle_media_stream(websocket: WebSocket):
         # --- Configure and Connect to Gemini Live API ---
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
         config = genai_types.LiveConnectConfig(
-            response_modalities=["AUDIO"], # Essential for voice output
-            # Optional: configure VAD, voice, language, etc.
+            response_modalities=["AUDIO"],  # Essential for voice output
             speech_config=genai_types.SpeechConfig(
-                # Example: Change voice
-                # voice_config=genai_types.VoiceConfig(
-                #     prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name="Kore")
-                # )
-                # Example: Change language
-                # language_code="en-US"
+                # Optional: configure voice, language, etc.
             ),
-            # Using automatic VAD by default
-            realtime_input_config=genai_types.RealtimeInputConfig(
-                 automatic_activity_detection=genai_types.AutomaticActivityDetection()
+            # Pass realtime_input_config as a dictionary
+            realtime_input_config={
+                "automatic_activity_detection": genai_types.AutomaticActivityDetection()
+                # Assuming AutomaticActivityDetection type exists
+                # If AutomaticActivityDetection also causes issues, use a nested dict:
+                # "automatic_activity_detection": { "disabled": False }
+            },
+            system_instruction=genai_types.Content(
+                parts=[
+                    genai_types.Part(
+                        text=(
+                            "You are Samarth’s AI assistant. Be friendly, funny, and helpful. "
+                            "Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism. "
+                        )
+                    )
+                ]
             ),
-            # Optional: Set system instructions
-             system_instruction=genai_types.Content(
-                 parts=[
-                     genai_types.Part(
-                         text=(
-                             "You are Samarth’s AI assistant. Be friendly, funny, and helpful. "
-                             "Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism. "
-                             # "Use a Boston accent when possible." # Note: Accent control isn't explicitly listed, but natural speech might imply it. Focus on friendly/helpful.
-                         )
-                     )
-                 ]
-             ),
-             # Optional: Enable session resumption / context compression for longer calls
-             # session_resumption=genai_types.SessionResumptionConfig(),
-             # context_window_compression=genai_types.ContextWindowCompressionConfig(
-             #      sliding_window=genai_types.SlidingWindow()
-             # )
+            # Optional: Session resumption / context compression
         )
 
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
