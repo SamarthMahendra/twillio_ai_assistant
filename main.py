@@ -282,22 +282,14 @@ async def handle_media_stream(websocket: WebSocket):
         # *** Use a dictionary for the configuration ***
         config = {
             "response_modalities": ["AUDIO"],  # Essential for voice output
-
-            # *** Pass SpeechConfig object directly (if not empty/default) ***
             "speech_config": genai_types.SpeechConfig(
                 # Optional: configure voice, language, etc.
-                # voice_config=genai_types.VoiceConfig(...)
-                # language_code="en-US"
             ),
-
-            # Configure VAD using nested dictionaries
             "realtime_input_config": {
                 "automatic_activity_detection": {
-                    # Keep empty for defaults, or add specific VAD params here
+                    # Keep empty for defaults
                 }
             },
-
-            # *** Pass Content object directly for system instructions ***
             "system_instruction": genai_types.Content(
                 parts=[
                     genai_types.Part(
@@ -308,27 +300,27 @@ async def handle_media_stream(websocket: WebSocket):
                     )
                 ]
             ),
-
-            # Optional: Enable session resumption / context compression
-            # "session_resumption": {},
-            # "context_window_compression": { ... }
+            # Optional: Session resumption / context compression
         }
 
         # --- Optional: Clean up config dictionary ---
-        # Remove keys with default/empty values if they cause issues or are not needed
-        # Example: Only include speech_config if it has non-default settings
-        if not config["speech_config"].voice_config and not config["speech_config"].language_code:
-            del config["speech_config"]
+        # REMOVED the check for speech_config attributes
+
         # Example: Only include system_instruction if text is provided
-        if not config["system_instruction"].parts[0].text:
-            del config["system_instruction"]
-        # Remove realtime_input_config if using absolute defaults and it causes issues
-        # (Though usually fine to leave automatic_activity_detection: {} )
+        # You might still want this check if you conditionally create system_instruction
+        if not config["system_instruction"].parts or not config["system_instruction"].parts[0].text:
+            # Be careful here, ensure parts list exists before indexing
+            if "system_instruction" in config:
+                del config["system_instruction"]
 
         # Pass the potentially cleaned dictionary directly to connect
+        logger.info(f"[{stream_sid}] Attempting to connect with config: {config}")  # Log the config being sent
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
             gemini_session = session
             logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
+            # ... rest of the function ...
+
+        logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
             logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
 
             # Run tasks concurrently: one listens to Twilio, one listens to Gemini
