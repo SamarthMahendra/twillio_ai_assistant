@@ -6,7 +6,9 @@ import audioop
 import logging
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.websockets import WebSocketDisconnect, WebSocketState, ConnectionClosedError # Ensure WebSocketState & ConnectionClosedError are imported
+# Corrected imports for WebSocketState and ConnectionClosedError
+from fastapi.websockets import WebSocketDisconnect, WebSocketState
+from websockets.exceptions import ConnectionClosedError # Import from websockets library
 from dotenv import load_dotenv
 from twilio.twiml.voice_response import VoiceResponse, Connect
 from google.genai import Client as GenAIClient
@@ -58,6 +60,7 @@ def pcm_to_ulaw(pcm_data: bytes, sample_rate: int, target_rate: int = TWILIO_SAM
              return b""
 
         if sample_rate != target_rate:
+            # state=None is crucial for independent chunk processing
             pcm_data, _ = audioop.ratecv(pcm_data, 2, 1, sample_rate, target_rate, None)
 
         ulaw_data = audioop.lin2ulaw(pcm_data, 2)
@@ -82,6 +85,7 @@ def ulaw_to_pcm(ulaw_data: bytes, sample_rate: int = TWILIO_SAMPLE_RATE, target_
         pcm_data = audioop.ulaw2lin(ulaw_data, 2)
 
         if sample_rate != target_rate:
+             # state=None is crucial for independent chunk processing
             pcm_data, _ = audioop.ratecv(pcm_data, 2, 1, sample_rate, target_rate, None)
 
         return pcm_data
@@ -121,9 +125,6 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
     if not gemini_session:
         logger.error(f"[{stream_sid}] Gemini session is not valid in handle_twilio_to_gemini.")
         return
-
-    # Define the user turn structure once
-    user_turn_base = {"role": "user", "parts": []}
 
     try:
         while True:
@@ -184,6 +185,8 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
 
     except WebSocketDisconnect:
         logger.info(f"[{stream_sid}] Twilio WebSocket disconnected.")
+    except ConnectionClosedError as cc_error: # Catch specific websocket closed errors
+         logger.warning(f"[{stream_sid}] Twilio WebSocket connection closed unexpectedly: {cc_error.code} {cc_error.reason}")
     except json.JSONDecodeError as json_err:
         logger.error(f"[{stream_sid}] Error decoding JSON from Twilio: {json_err}. Message: {message}")
     except Exception as e:
@@ -263,8 +266,10 @@ async def handle_gemini_to_twilio(gemini_session, twilio_ws: WebSocket, stream_s
 
     except ClientError as e:
          logger.error(f"[{stream_sid}] Gemini API client error in listener: {e}", exc_info=True)
-    except WebSocketDisconnect:
-        logger.info(f"[{stream_sid}] Gemini session WebSocket disconnected.")
+    except WebSocketDisconnect: # This might be raised by the session internally
+        logger.info(f"[{stream_sid}] Gemini session WebSocket disconnected (WebSocketDisconnect).")
+    except ConnectionClosedError as cc_error: # Catch specific websocket closed errors from underlying library
+         logger.warning(f"[{stream_sid}] Gemini WebSocket connection closed unexpectedly: {cc_error.code} {cc_error.reason}")
     except Exception as e:
         logger.error(f"[{stream_sid}] Error in Gemini listener: {e}", exc_info=True)
     finally:
@@ -273,6 +278,8 @@ async def handle_gemini_to_twilio(gemini_session, twilio_ws: WebSocket, stream_s
              try:
                  await twilio_ws.close(code=1000)
                  logger.info(f"[{stream_sid}] Closed Twilio WebSocket from Gemini handler.")
+             except ConnectionClosedError: # Already closed
+                  pass
              except Exception as close_err:
                   logger.error(f"[{stream_sid}] Error closing Twilio WebSocket: {close_err}")
 
@@ -315,12 +322,12 @@ async def handle_media_stream(websocket: WebSocket):
 
         if not stream_sid:
              logger.error("Failed to obtain streamSid. Closing connection.")
-             await websocket.close(code=1011, reason="streamSid not received")
+             if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason="streamSid not received")
              return
 
         if not genai_client:
             logger.error(f"[{stream_sid}] GenAI client not initialized. Cannot proceed.")
-            await websocket.close(code=1011, reason="Server configuration error")
+            if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason="Server configuration error")
             return
 
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
@@ -328,12 +335,12 @@ async def handle_media_stream(websocket: WebSocket):
         # Minimal config first, can add system_instruction/speech_config later if needed
         config = {
             "response_modalities": ["AUDIO"],
-            # Add back if connection is stable:
-            # "system_instruction": genai_types.Content(parts=[genai_types.Part(text="...")])
+            "system_instruction": genai_types.Content(parts=[genai_types.Part(text="You are Samarth’s AI assistant. Be friendly, funny, and helpful. Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism.")])
         }
         logger.info(f"[{stream_sid}] Attempting to connect with config: {config}")
 
         try:
+            # ExperimentalWarning is expected, handled by SDK
             async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
                 gemini_session = session
                 logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
@@ -341,63 +348,77 @@ async def handle_media_stream(websocket: WebSocket):
                 twilio_task = asyncio.create_task(handle_twilio_to_gemini(websocket, gemini_session, stream_sid))
                 gemini_task = asyncio.create_task(handle_gemini_to_twilio(gemini_session, websocket, stream_sid))
 
+                # Wait for either task to complete
                 done, pending = await asyncio.wait(
                     [twilio_task, gemini_task],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
+                # --- Task Cleanup ---
                 logger.info(f"[{stream_sid}] One handler task completed. Cleaning up...")
                 for task in pending:
                     if not task.done():
                         task.cancel()
-                        try: await task
+                        try: await task # Allow cancellation to propagate
                         except asyncio.CancelledError: logger.info(f"[{stream_sid}] Task successfully cancelled.")
                         except Exception as e_cancel: logger.error(f"[{stream_sid}] Error during pending task cancellation: {e_cancel}")
 
+                # Log results/exceptions from completed tasks
                 for task in done:
                     try:
-                        task.result()
+                        task.result() # Raise exception if task failed
                         logger.info(f"[{stream_sid}] Completed task finished successfully.")
-                    except asyncio.CancelledError: logger.info(f"[{stream_sid}] Completed task was cancelled.")
+                    except asyncio.CancelledError: logger.info(f"[{stream_sid}] Completed task was cancelled.") # Should not happen if FIRST_COMPLETED
                     except Exception as e_done: logger.error(f"[{stream_sid}] Completed task finished with error: {e_done}", exc_info=False)
 
-        except ValidationError as e:
+        except ValidationError as e: # Catch Pydantic validation errors specifically
              logger.error(f"[{stream_sid}] Pydantic Validation Error during connect: {e}", exc_info=True)
              if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason="Gemini Configuration Error")
-             return
+             return # Exit function after closing
         except ClientError as e:
              logger.error(f"[{stream_sid}] Gemini API ClientError during connect: {e}", exc_info=True)
              if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason="Gemini Connection Error")
-             return
+             return # Exit function after closing
         except ConnectionClosedError as e: # Catch specific websocket closure errors
              logger.error(f"[{stream_sid}] WebSocket ConnectionClosedError during connect: {e}", exc_info=True)
              reason = f"Gemini Connection Closed: {e.code} {e.reason}"
              if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason=reason)
-             return
-        except Exception as e:
+             return # Exit function after closing
+        except Exception as e: # Catch other potential errors during config/connect
              logger.error(f"[{stream_sid}] Error during Gemini connection setup: {e}", exc_info=True)
              reason = "Gemini Connection Setup Error"
              if websocket.client_state == WebSocketState.CONNECTED: await websocket.close(code=1011, reason=reason)
-             return
+             return # Exit function after closing
 
     except WebSocketDisconnect:
         logger.info(f"[{stream_sid or 'Unknown SID'}] Twilio WebSocket disconnected during setup or main loop.")
+    except ConnectionClosedError as cc_error: # Catch specific websocket closed errors
+         logger.warning(f"[{stream_sid or 'Unknown SID'}] Twilio WebSocket connection closed unexpectedly in main handler: {cc_error.code} {cc_error.reason}")
     except Exception as e:
         logger.error(f"[{stream_sid or 'Unknown SID'}] Unexpected error in media stream handler: {e}", exc_info=True)
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close(code=1011, reason="Internal Server Error")
     finally:
         logger.info(f"[{stream_sid or 'Unknown SID'}] Cleaning up WebSocket connection handler.")
+        # Cancel tasks if they are still running (e.g., if main handler loop exits unexpectedly)
         if twilio_task and not twilio_task.done(): twilio_task.cancel()
         if gemini_task and not gemini_task.done(): gemini_task.cancel()
-        if websocket in twilio_stream_sids: del twilio_stream_sids[websocket]
+        # Clean up SID mapping
+        if websocket in twilio_stream_sids:
+            del twilio_stream_sids[websocket]
+        # The 'async with' context manager for gemini_session handles its closure if entered.
+
 
 if __name__ == "__main__":
     import uvicorn
 
     if not genai_client:
          logger.warning("GenAI client failed to initialize. API calls will fail.")
+         # Depending on requirements, might exit here:
+         # import sys
+         # sys.exit("Exiting due to GenAI client initialization failure.")
 
     logger.info(f">>> Starting Gemini Live API proxy server on port {PORT} using model {GEMINI_MODEL}")
+    # Use PORT from environment for Render compatibility
     uvicorn.run(app, host="0.0.0.0", port=PORT)
 
