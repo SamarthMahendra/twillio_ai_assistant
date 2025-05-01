@@ -37,39 +37,22 @@ async def incoming_call(request: Request):
     resp.append(connect)
     return HTMLResponse(str(resp), media_type="application/xml")
 
+
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
     await websocket.accept()
 
-    # ----------------------------------------------------------------
-    # 1) Twilio will first send a "connected" event, then a "start".
-    #    Loop until we see "start", then stash streamSid.
-    # ----------------------------------------------------------------
-    stream_sid = None
-    while True:
-        raw = await websocket.receive_text()
-        msg = json.loads(raw)
-        event = msg.get("event")
-
-        if event == "start":
-            stream_sid = msg["start"]["streamSid"]
-            print(f"[Twilio] Stream started: {stream_sid}")
-            break
-        else:
-            # ignore anything else (e.g. "connected")
-            continue
-
-    # ----------------------------------------------------------------
-    # 2) Init Gemini client & config
-    # ----------------------------------------------------------------
+    # Initialize Gemini client
     client = genai.Client(api_key=GEMINI_API_KEY)
     config = types.LiveConnectConfig(
         system_instruction=types.Content(
-            parts=[types.Part(text="""
-                You are Samarth’s personal assistant who chats like over coffee,
-                using fillers (“um,” “uh,” “y’know”), pauses (“…”), and a chill tone.
-                If you don’t know something, say “Hmm… not sure, but lemme think.”
-            """)]
+            parts=[
+                types.Part(
+                    text="""
+                    You are a helpful AI assistant. Greet the caller warmly and ask how you can help them today.
+                    """
+                )
+            ]
         ),
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -78,73 +61,87 @@ async def media_stream(websocket: WebSocket):
             )
         )
     )
+    stream_sid = None
 
-    async def say_hello(session):
-        # First turn: prompt Gemini
-        prompt = "Hello? Gemini, are you there?"
-        await session.send_client_content(
-            turns={"role": "user", "parts": [{"text": prompt}]},
-            turn_complete=True
-        )
-        print(f"[Gemini] Sent prompt: {prompt}")
-
-        # Wait for Gemini’s first audio chunk and immediately forward it
-        async for chunk in session.receive():
-            if getattr(chunk, "data", None):
-                encoded = base64.b64encode(chunk.data).decode("utf-8")
-                await websocket.send_json({
-                    "event": "media",
-                    "streamSid": stream_sid,
-                    "media": {"payload": encoded}
-                })
+    # Wait for Twilio to establish the stream and get stream SID
+    try:
+        while stream_sid is None:
+            msg = await websocket.receive_text()
+            data = json.loads(msg)
+            if data.get("event") == "start":
+                stream_sid = data["start"]["streamSid"]
+                print(f"Stream started: {stream_sid}")
                 break
+    except Exception as e:
+        print(f"Error during stream initialization: {e}")
+        await websocket.close()
+        return
 
+    # Generator to yield PCM audio from Twilio mu-law stream
     async def twilio_audio_stream():
-        # Generator: receive Twilio→yield PCM to Gemini
+        nonlocal stream_sid
         try:
             while True:
-                raw = await websocket.receive_text()
-                msg = json.loads(raw)
-                evt = msg.get("event")
-
-                if evt == "media":
-                    ulaw = base64.b64decode(msg["media"]["payload"])
+                msg = await websocket.receive_text()
+                data = json.loads(msg)
+                event = data.get("event")
+                if event == "media":
+                    ulaw = base64.b64decode(data["media"]["payload"])
+                    # Convert from mu-law to 16-bit PCM
                     pcm = audioop.ulaw2lin(ulaw, 2)
                     yield pcm
-
-                elif evt == "stop":
-                    print("[Twilio] Stream stopped by Twilio")
+                elif event == "stop":
+                    print("Stream stopped by Twilio")
                     break
         except WebSocketDisconnect:
-            print("[Twilio] WebSocket disconnected")
+            print("Twilio WebSocket disconnected in stream generator")
 
-    # ----------------------------------------------------------------
-    # 3) Open Live API session, speak first, then relay
-    # ----------------------------------------------------------------
     async with client.aio.live.connect(model=MODEL, config=config) as session:
-        # Gemini speaks into the call before any user audio
-        await say_hello(session)
+        try:
+            # Make Gemini speak first by sending an initial message
+            await session.send_client_content(
+                turns={"role": "user", "parts": [{"text": "Hello, please introduce yourself to the caller."}]},
+                turn_complete=True
+            )
 
-        # Now pipe the rest of the call bi-directionally
-        async for resp in session.start_stream(
-            stream=twilio_audio_stream(),
-            mime_type="audio/pcm"
-        ):
-            if getattr(resp, "data", None):
-                # downsample 24k→8k, convert to μ-law, forward to Twilio
-                pcm_out = resp.data
-                pcm_rs, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
-                ulaw = audioop.lin2ulaw(pcm_rs, 2)
-                payload = base64.b64encode(ulaw).decode("utf-8")
+            # First, process the initial greeting response
+            async for response in session.receive():
+                if getattr(response, 'data', None):
+                    pcm_out = response.data
+                    # Downsample and convert PCM to mu-law for Twilio
+                    pcm_resampled, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
+                    mulaw = audioop.lin2ulaw(pcm_resampled, 2)
+                    payload = base64.b64encode(mulaw).decode('utf-8')
+                    await websocket.send_json({
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": payload}
+                    })
 
-                await websocket.send_json({
-                    "event": "media",
-                    "streamSid": stream_sid,
-                    "media": {"payload": payload}
-                })
+                # Break out of this loop when the initial greeting is complete
+                if hasattr(response, 'server_content') and getattr(response.server_content, 'generation_complete',
+                                                                   False):
+                    break
 
-    # Clean up
-    await websocket.close()
+            # Then continue with the regular conversation stream
+            async for response in session.start_stream(stream=twilio_audio_stream(),
+                                                       mime_type="audio/pcm"):  # type: ignore
+                if getattr(response, 'data', None):
+                    pcm_out = response.data
+                    # Downsample and convert PCM to mu-law for Twilio
+                    pcm_resampled, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
+                    mulaw = audioop.lin2ulaw(pcm_resampled, 2)
+                    payload = base64.b64encode(mulaw).decode('utf-8')
+                    await websocket.send_json({
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": payload}
+                    })
+        except Exception as e:
+            print(f"[ERROR] gemini_websocket: {e}")
+        finally:
+            await websocket.close()
+            await session.aclose()
 
 
 if __name__ == "__main__":
