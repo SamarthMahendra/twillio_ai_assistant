@@ -71,11 +71,8 @@ async def media_stream(websocket: WebSocket):
                         payload = data["media"]["payload"]
                         raw = base64.b64decode(payload)
                         # Send incoming audio to Gemini Live as real-time input
-                        await session.send(
-                            input=types.LiveSendRealtimeInputParameters(
-                                audio=types.Blob(data=raw, mime_type="audio/x-ulaw;rate=8000")
-                            ),
-                            end_of_turn=False,
+                        await session.send_realtime_input(
+                            audio=types.Blob(data=raw, mime_type="audio/x-ulaw;rate=8000")
                         )
             except WebSocketDisconnect:
                 print("Twilio WebSocket disconnected, closing Gemini session.")
