@@ -122,12 +122,13 @@ talk natutally, conversationally, and casually."""
                 )
             ),
         ),
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                silence_duration_ms=10_000  # wait up to 10 s of silence
-            )
-        )
     )
+
+    config._data["realtimeInputConfig"] = {
+        "automaticActivityDetection": {
+            "silenceDurationMs": 10000
+        }
+    }
 
     # twist: store the Twilio stream SID so we can send back our audio
     stream_sid = None
