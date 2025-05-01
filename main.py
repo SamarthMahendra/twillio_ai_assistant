@@ -275,54 +275,54 @@ async def handle_media_stream(websocket: WebSocket):
             return
 
         # --- Configure and Connect to Gemini Live API ---
-            # --- Configure and Connect to Gemini Live API ---
-            logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
+        # --- Configure and Connect to Gemini Live API ---
+        logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
 
-            # *** Use a dictionary for the configuration ***
-            config = {
-                "response_modalities": ["AUDIO"],  # Essential for voice output
-                # Optional: configure speech settings (voice, language)
-                "speech_config": genai_types.SpeechConfig(
-                    # Example: Change voice
-                    # voice_config=genai_types.VoiceConfig(
-                    #     prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name="Kore")
-                    # )
-                    # Example: Change language
-                    # language_code="en-US"
-                ).to_dict(),  # Convert SpeechConfig object to dict if necessary for the API
-                # Or structure it directly as a dict based on API spec if to_dict() fails
-                # Configure VAD using nested dictionaries
-                "realtime_input_config": {
-                    "automatic_activity_detection": {
-                        # Keep empty for defaults, or add specific VAD params here:
-                        # "disabled": False,
-                        # "start_of_speech_sensitivity": "START_SENSITIVITY_LOW", # Use string enums if types don't work
-                        # "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
-                        # "silence_duration_ms": 100,
-                    }
-                },
-                # Optional: Set system instructions
-                "system_instruction": genai_types.Content(
-                    parts=[
-                        genai_types.Part(
-                            text=(
-                                "You are Samarth’s AI assistant. Be friendly, funny, and helpful. "
-                                "Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism. "
-                            )
+        # *** Use a dictionary for the configuration ***
+        config = {
+            "response_modalities": ["AUDIO"],  # Essential for voice output
+            # Optional: configure speech settings (voice, language)
+            "speech_config": genai_types.SpeechConfig(
+                # Example: Change voice
+                # voice_config=genai_types.VoiceConfig(
+                #     prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name="Kore")
+                # )
+                # Example: Change language
+                # language_code="en-US"
+            ).to_dict(),  # Convert SpeechConfig object to dict if necessary for the API
+            # Or structure it directly as a dict based on API spec if to_dict() fails
+            # Configure VAD using nested dictionaries
+            "realtime_input_config": {
+                "automatic_activity_detection": {
+                    # Keep empty for defaults, or add specific VAD params here:
+                    # "disabled": False,
+                    # "start_of_speech_sensitivity": "START_SENSITIVITY_LOW", # Use string enums if types don't work
+                    # "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
+                    # "silence_duration_ms": 100,
+                }
+            },
+            # Optional: Set system instructions
+            "system_instruction": genai_types.Content(
+                parts=[
+                    genai_types.Part(
+                        text=(
+                            "You are Samarth’s AI assistant. Be friendly, funny, and helpful. "
+                            "Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism. "
                         )
-                    ]
-                ).to_dict(),  # Convert Content object to dict if necessary
-                # Or structure it directly as a dict based on API spec
-                # Optional: Enable session resumption / context compression for longer calls
-                # "session_resumption": {}, # Use dict format
-                # "context_window_compression": { # Use dict format
-                #      "sliding_window": {}
-                # }
-            }
-            # Clean up None values if to_dict() includes them and they cause issues
-            # config = {k: v for k, v in config.items() if v is not None}
-            # if 'speech_config' in config and not config['speech_config']: del config['speech_config']
-            # etc. for other optional fields
+                    )
+                ]
+            ).to_dict(),  # Convert Content object to dict if necessary
+            # Or structure it directly as a dict based on API spec
+            # Optional: Enable session resumption / context compression for longer calls
+            # "session_resumption": {}, # Use dict format
+            # "context_window_compression": { # Use dict format
+            #      "sliding_window": {}
+            # }
+        }
+        # Clean up None values if to_dict() includes them and they cause issues
+        # config = {k: v for k, v in config.items() if v is not None}
+        # if 'speech_config' in config and not config['speech_config']: del config['speech_config']
+        # etc. for other optional fields
 
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
             gemini_session = session
