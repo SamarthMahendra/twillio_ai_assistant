@@ -14,12 +14,10 @@ from google.genai import types
 
 load_dotenv()
 
-# Load Gemini API key
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("Missing Gemini API key. Set GEMINI_API_KEY in .env")
 
-# Configuration
 MODEL = os.getenv("MODEL", "gemini-2.0-flash-live-001")
 VOICE = os.getenv("VOICE", "Leda")
 PORT = int(os.getenv("PORT", 5050))
@@ -28,38 +26,49 @@ app = FastAPI()
 
 @app.get("/", response_class=JSONResponse)
 async def health_check():
-    return JSONResponse(content={"message": "Twilio IVA Server running with Gemini Live API"})
+    return JSONResponse({"message": "Twilio IVA Server running with Gemini Live API"})
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def incoming_call(request: Request):
     host = request.url.hostname
-    response = VoiceResponse()
+    resp = VoiceResponse()
     connect = Connect()
     connect.stream(url=f"wss://{host}/media-stream")
-    response.append(connect)
-    return HTMLResponse(content=str(response), media_type="application/xml")
+    resp.append(connect)
+    return HTMLResponse(str(resp), media_type="application/xml")
 
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
     await websocket.accept()
 
-    # 1️⃣ Pull off Twilio's "start" to grab streamSid immediately
-    msg = await websocket.receive_text()
-    data = json.loads(msg)
-    if data.get("event") != "start":
-        raise RuntimeError("Expected Twilio 'start' event first")
-    stream_sid = data["start"]["streamSid"]
-    print(f"Stream started: {stream_sid}")
+    # ----------------------------------------------------------------
+    # 1) Twilio will first send a "connected" event, then a "start".
+    #    Loop until we see "start", then stash streamSid.
+    # ----------------------------------------------------------------
+    stream_sid = None
+    while True:
+        raw = await websocket.receive_text()
+        msg = json.loads(raw)
+        event = msg.get("event")
 
-    # Initialize Gemini client & config
+        if event == "start":
+            stream_sid = msg["start"]["streamSid"]
+            print(f"[Twilio] Stream started: {stream_sid}")
+            break
+        else:
+            # ignore anything else (e.g. "connected")
+            continue
+
+    # ----------------------------------------------------------------
+    # 2) Init Gemini client & config
+    # ----------------------------------------------------------------
     client = genai.Client(api_key=GEMINI_API_KEY)
     config = types.LiveConnectConfig(
         system_instruction=types.Content(
             parts=[types.Part(text="""
-                You are Samarth’s personal assistant who usually talks to recruiters or anyone interested
-                in hiring him. When you speak, use natural fillers (“um,” “uh,” “y’know,” “I mean,” “like”),
-                insert brief pauses (“…”), and keep a chill, conversational tone. If you don’t know something,
-                say “Hmm… not sure, but lemme think.”
+                You are Samarth’s personal assistant who chats like over coffee,
+                using fillers (“um,” “uh,” “y’know”), pauses (“…”), and a chill tone.
+                If you don’t know something, say “Hmm… not sure, but lemme think.”
             """)]
         ),
         response_modalities=["AUDIO"],
@@ -71,58 +80,62 @@ async def media_stream(websocket: WebSocket):
     )
 
     async def say_hello(session):
-        # Send the initial prompt
-        message = "Hello? Gemini, are you there?"
+        # First turn: prompt Gemini
+        prompt = "Hello? Gemini, are you there?"
         await session.send_client_content(
-            turns={"role": "user", "parts": [{"text": message}]},
+            turns={"role": "user", "parts": [{"text": prompt}]},
             turn_complete=True
         )
-        print(f"Sent message: {message}")
+        print(f"[Gemini] Sent prompt: {prompt}")
 
-        # Wait for the first audio chunk back from Gemini, then send it to Twilio
+        # Wait for Gemini’s first audio chunk and immediately forward it
         async for chunk in session.receive():
             if getattr(chunk, "data", None):
-                mulaw_payload = base64.b64encode(chunk.data).decode("utf-8")
+                encoded = base64.b64encode(chunk.data).decode("utf-8")
                 await websocket.send_json({
                     "event": "media",
                     "streamSid": stream_sid,
-                    "media": {"payload": mulaw_payload}
+                    "media": {"payload": encoded}
                 })
-                break  # only send the first response here
+                break
 
     async def twilio_audio_stream():
-        # Generator: Twilio → Gemini
+        # Generator: receive Twilio→yield PCM to Gemini
         try:
             while True:
-                msg = await websocket.receive_text()
-                data = json.loads(msg)
-                event = data.get("event")
-                if event == "media":
-                    ulaw = base64.b64decode(data["media"]["payload"])
+                raw = await websocket.receive_text()
+                msg = json.loads(raw)
+                evt = msg.get("event")
+
+                if evt == "media":
+                    ulaw = base64.b64decode(msg["media"]["payload"])
                     pcm = audioop.ulaw2lin(ulaw, 2)
                     yield pcm
-                elif event == "stop":
-                    print("Stream stopped by Twilio")
+
+                elif evt == "stop":
+                    print("[Twilio] Stream stopped by Twilio")
                     break
         except WebSocketDisconnect:
-            print("Twilio WebSocket disconnected in stream generator")
+            print("[Twilio] WebSocket disconnected")
 
-    # 2️⃣ Open Gemini Live session, speak first, then relay
+    # ----------------------------------------------------------------
+    # 3) Open Live API session, speak first, then relay
+    # ----------------------------------------------------------------
     async with client.aio.live.connect(model=MODEL, config=config) as session:
-        # Gemini says hello into the call
+        # Gemini speaks into the call before any user audio
         await say_hello(session)
 
-        # Then pipe any further audio back-and-forth
-        async for response in session.start_stream(
+        # Now pipe the rest of the call bi-directionally
+        async for resp in session.start_stream(
             stream=twilio_audio_stream(),
             mime_type="audio/pcm"
         ):
-            if getattr(response, "data", None):
-                # downsample from 24k→8k and convert to μ-law
-                pcm_out = response.data
-                pcm_resampled, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
-                mulaw = audioop.lin2ulaw(pcm_resampled, 2)
-                payload = base64.b64encode(mulaw).decode("utf-8")
+            if getattr(resp, "data", None):
+                # downsample 24k→8k, convert to μ-law, forward to Twilio
+                pcm_out = resp.data
+                pcm_rs, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
+                ulaw = audioop.lin2ulaw(pcm_rs, 2)
+                payload = base64.b64encode(ulaw).decode("utf-8")
 
                 await websocket.send_json({
                     "event": "media",
@@ -130,11 +143,11 @@ async def media_stream(websocket: WebSocket):
                     "media": {"payload": payload}
                 })
 
-    # When we exit the `async with`, the Gemini session is automatically closed
+    # Clean up
     await websocket.close()
 
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"Starting server on port {PORT}")
+    print(f"Starting on port {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
