@@ -32,6 +32,7 @@ async def health_check():
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def incoming_call(request: Request):
+    # Respond with TwiML to connect the call to our media-stream endpoint
     host = request.url.hostname
     response = VoiceResponse()
     connect = Connect()
@@ -42,7 +43,8 @@ async def incoming_call(request: Request):
 @app.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
     await websocket.accept()
-    # Initialize Gemini Live client
+
+    # Initialize Gemini Live API client
     client = genai.Client(api_key=GEMINI_API_KEY)
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
@@ -52,6 +54,7 @@ async def media_stream(websocket: WebSocket):
             )
         )
     )
+
     async with client.aio.live.connect(model=model, config=config) as session:
         stream_sid = None
 
@@ -63,21 +66,26 @@ async def media_stream(websocket: WebSocket):
                     event = data.get("event")
                     if event == "start":
                         stream_sid = data["start"]["streamSid"]
+                        print(f"Stream started: {stream_sid}")
                     elif event == "media":
                         payload = data["media"]["payload"]
                         raw = base64.b64decode(payload)
-                        # Send incoming audio to Gemini
-                        await session.send_realtime_input(
-                            audio=types.Blob(data=raw, mime_type="audio/x-ulaw;rate=8000")
+                        # Send incoming audio to Gemini Live as real-time input
+                        await session.send(
+                            input=types.LiveSendRealtimeInputParameters(
+                                audio=types.Blob(data=raw, mime_type="audio/x-ulaw;rate=8000")
+                            ),
+                            end_of_turn=False,
                         )
             except WebSocketDisconnect:
+                print("Twilio WebSocket disconnected, closing Gemini session.")
                 await session.aclose()
 
         async def send_responses():
             try:
                 async for resp in session.receive():
-                    # If resp contains audio bytes
-                    if hasattr(resp, 'data') and resp.data is not None:
+                    # Forward Gemini audio output back to Twilio
+                    if getattr(resp, 'data', None) is not None:
                         encoded = base64.b64encode(resp.data).decode()
                         await websocket.send_json({
                             "event": "media",
