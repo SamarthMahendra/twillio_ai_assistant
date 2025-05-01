@@ -117,8 +117,8 @@ talk natutally, conversationally, and casually."""
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE), language_code="en-GB",
-            )
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE),
+            ), language_code="en-GB"
         ),
     )
 
