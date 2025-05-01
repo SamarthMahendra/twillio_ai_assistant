@@ -314,7 +314,7 @@ You're playful, but grounded. Vulnerable, yet confident. If you’re unsure abou
             #     }
             # ],
             # "tool_choice": "auto",
-            "temperature": 0.8,
+            "temperature": 0.85,
         }
     }
     await openai_ws.send(json.dumps(session_update))
