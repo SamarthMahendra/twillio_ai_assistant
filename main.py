@@ -155,99 +155,94 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
 
     async def receive_from_twilio():
         nonlocal stream_sid, latest_media_timestamp, audio_buffer
-        session = None
         try:
             # First establish Gemini Live API session
-            session = await client.aio.live.connect(model=model, config=config)
-            print("### Connected to Gemini Live API")
-            
-            # Initial greeting
-            await session.send_client_content(
-                turns={"role": "user", "parts": [{"text": "Greet the user with 'Hey! You've reached Samarth's personal assistant. What can I help you with today?'"}]},
-                turn_complete=True
-            )
-            
-            # Handle incoming Twilio messages
-            async for message in websocket.iter_text():
-                data = json.loads(message)
-                print(f"<<< [Twilio → Server] Event: {data.get('event')}")
+            async with client.aio.live.connect(model=model, config=config) as session:
+                print("### Connected to Gemini Live API")
                 
-                if data['event'] == 'media':
-                    latest_media_timestamp = int(data['media']['timestamp'])
-                    payload = data['media']['payload']
+                # Initial greeting
+                await session.send_client_content(
+                    turns={"role": "user", "parts": [{"text": "Greet the user with 'Hey! You've reached Samarth's personal assistant. What can I help you with today?'"}]},
+                    turn_complete=True
+                )
+                
+                # Process responses from Gemini and send them to Twilio in a separate task
+                async def process_gemini_responses():
+                    try:
+                        async for response in session.receive():
+                            if response.data is not None:
+                                # Convert Gemini audio output to format for Twilio
+                                audio_data = response.data
+                                encoded_payload = base64.b64encode(audio_data).decode('utf-8')
+                                
+                                await websocket.send_json({
+                                    "event": "media",
+                                    "streamSid": stream_sid,
+                                    "media": {"payload": encoded_payload}
+                                })
+                                
+                                # Send mark to maintain Twilio's synchronization
+                                await websocket.send_json({
+                                    "event": "mark",
+                                    "streamSid": stream_sid,
+                                    "mark": {"name": "responsePart"}
+                                })
+                                
+                            # Log any events of interest
+                            if response.server_content:
+                                print(f">>> [Gemini → Server] Event received")
+                                if hasattr(response.server_content, 'interrupted') and response.server_content.interrupted:
+                                    print(">>> Detected interruption")
+                                    # Clear audio buffer to start fresh
+                                    audio_buffer = bytearray()
+                    except Exception as e:
+                        print(f"[ERROR] process_gemini_responses: {e}")
+                
+                # Start processing responses in parallel
+                response_task = asyncio.create_task(process_gemini_responses())
+                
+                # Handle incoming Twilio messages
+                async for message in websocket.iter_text():
+                    data = json.loads(message)
+                    print(f"<<< [Twilio → Server] Event: {data.get('event')}")
                     
-                    # Decode base64 and convert from ulaw to PCM
-                    raw_audio = base64.b64decode(payload)
-                    pcm_audio = ulaw_to_pcm(raw_audio)
-                    
-                    # Add to buffer
-                    audio_buffer.extend(pcm_audio)
-                    
-                    # Send accumulated audio to Gemini when buffer is large enough
-                    # (16000 samples = 1 second of audio at 16kHz)
-                    if len(audio_buffer) >= 4000:  # ~250ms of audio
-                        await session.send_realtime_input(
-                            audio=types.Blob(data=bytes(audio_buffer), mime_type="audio/pcm;rate=16000")
-                        )
-                        # Clear buffer after sending
-                        audio_buffer = bytearray()
+                    if data['event'] == 'media':
+                        latest_media_timestamp = int(data['media']['timestamp'])
+                        payload = data['media']['payload']
                         
-                elif data['event'] == 'start':
-                    stream_sid = data['start']['streamSid']
-                    print(f"### Stream started: {stream_sid}")
-                    latest_media_timestamp = 0
-                    audio_buffer = bytearray()
+                        # Decode base64 and convert from ulaw to PCM
+                        raw_audio = base64.b64decode(payload)
+                        pcm_audio = ulaw_to_pcm(raw_audio)
+                        
+                        # Add to buffer
+                        audio_buffer.extend(pcm_audio)
+                        
+                        # Send accumulated audio to Gemini when buffer is large enough
+                        if len(audio_buffer) >= 4000:  # ~250ms of audio
+                            await session.send_realtime_input(
+                                audio=types.Blob(data=bytes(audio_buffer), mime_type="audio/pcm;rate=16000")
+                            )
+                            # Clear buffer after sending
+                            audio_buffer = bytearray()
+                            
+                    elif data['event'] == 'start':
+                        stream_sid = data['start']['streamSid']
+                        print(f"### Stream started: {stream_sid}")
+                        latest_media_timestamp = 0
+                        audio_buffer = bytearray()
+                    
+                    elif data['event'] == 'mark':
+                        print(">>> Received 'mark' from Twilio.")
                 
-                elif data['event'] == 'mark':
-                    print(">>> Received 'mark' from Twilio.")
-            
-            # Process responses from Gemini and send them to Twilio
-            async def process_gemini_responses():
-                try:
-                    async for response in session.receive():
-                        if response.data is not None:
-                            # Convert Gemini audio output (24kHz PCM) to ulaw for Twilio
-                            # In a real implementation, you would use a proper codec
-                            # For now, we'll use the raw data
-                            audio_data = response.data
-                            encoded_payload = base64.b64encode(audio_data).decode('utf-8')
-                            
-                            await websocket.send_json({
-                                "event": "media",
-                                "streamSid": stream_sid,
-                                "media": {"payload": encoded_payload}
-                            })
-                            
-                            # Send mark to maintain Twilio's synchronization
-                            await websocket.send_json({
-                                "event": "mark",
-                                "streamSid": stream_sid,
-                                "mark": {"name": "responsePart"}
-                            })
-                            
-                        # Log any events of interest
-                        if response.server_content:
-                            print(f">>> [Gemini → Server] Event received")
-                            if hasattr(response.server_content, 'interrupted') and response.server_content.interrupted:
-                                print(">>> Detected interruption")
-                                # Clear audio buffer to start fresh
-                                audio_buffer = bytearray()
-                except Exception as e:
-                    print(f"[ERROR] process_gemini_responses: {e}")
-            
-            # Start processing responses in parallel
-            response_task = asyncio.create_task(process_gemini_responses())
-            
-            # Wait for both tasks to complete
-            await response_task
+                # This will only be reached if the websocket.iter_text() loop exits
+                response_task.cancel()
                 
         except WebSocketDisconnect:
             print(">>> [Twilio] WebSocket disconnected.")
         except Exception as e:
             print(f"[ERROR] receive_from_twilio: {e}")
         finally:
-            if session:
-                await session.aclose()
+            # No need to manually close the session when using async with
     
     await receive_from_twilio()
 
