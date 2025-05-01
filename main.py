@@ -276,32 +276,28 @@ async def handle_media_stream(websocket: WebSocket):
 
         # --- Configure and Connect to Gemini Live API ---
         # --- Configure and Connect to Gemini Live API ---
+        # --- Configure and Connect to Gemini Live API ---
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
 
         # *** Use a dictionary for the configuration ***
         config = {
             "response_modalities": ["AUDIO"],  # Essential for voice output
-            # Optional: configure speech settings (voice, language)
+
+            # *** Pass SpeechConfig object directly (if not empty/default) ***
             "speech_config": genai_types.SpeechConfig(
-                # Example: Change voice
-                # voice_config=genai_types.VoiceConfig(
-                #     prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name="Kore")
-                # )
-                # Example: Change language
+                # Optional: configure voice, language, etc.
+                # voice_config=genai_types.VoiceConfig(...)
                 # language_code="en-US"
-            ).to_dict(),  # Convert SpeechConfig object to dict if necessary for the API
-            # Or structure it directly as a dict based on API spec if to_dict() fails
+            ),
+
             # Configure VAD using nested dictionaries
             "realtime_input_config": {
                 "automatic_activity_detection": {
-                    # Keep empty for defaults, or add specific VAD params here:
-                    # "disabled": False,
-                    # "start_of_speech_sensitivity": "START_SENSITIVITY_LOW", # Use string enums if types don't work
-                    # "end_of_speech_sensitivity": "END_SENSITIVITY_LOW",
-                    # "silence_duration_ms": 100,
+                    # Keep empty for defaults, or add specific VAD params here
                 }
             },
-            # Optional: Set system instructions
+
+            # *** Pass Content object directly for system instructions ***
             "system_instruction": genai_types.Content(
                 parts=[
                     genai_types.Part(
@@ -311,21 +307,28 @@ async def handle_media_stream(websocket: WebSocket):
                         )
                     )
                 ]
-            ).to_dict(),  # Convert Content object to dict if necessary
-            # Or structure it directly as a dict based on API spec
-            # Optional: Enable session resumption / context compression for longer calls
-            # "session_resumption": {}, # Use dict format
-            # "context_window_compression": { # Use dict format
-            #      "sliding_window": {}
-            # }
-        }
-        # Clean up None values if to_dict() includes them and they cause issues
-        # config = {k: v for k, v in config.items() if v is not None}
-        # if 'speech_config' in config and not config['speech_config']: del config['speech_config']
-        # etc. for other optional fields
+            ),
 
+            # Optional: Enable session resumption / context compression
+            # "session_resumption": {},
+            # "context_window_compression": { ... }
+        }
+
+        # --- Optional: Clean up config dictionary ---
+        # Remove keys with default/empty values if they cause issues or are not needed
+        # Example: Only include speech_config if it has non-default settings
+        if not config["speech_config"].voice_config and not config["speech_config"].language_code:
+            del config["speech_config"]
+        # Example: Only include system_instruction if text is provided
+        if not config["system_instruction"].parts[0].text:
+            del config["system_instruction"]
+        # Remove realtime_input_config if using absolute defaults and it causes issues
+        # (Though usually fine to leave automatic_activity_detection: {} )
+
+        # Pass the potentially cleaned dictionary directly to connect
         async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
             gemini_session = session
+            logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
             logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
 
             # Run tasks concurrently: one listens to Twilio, one listens to Gemini
