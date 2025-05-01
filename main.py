@@ -283,10 +283,7 @@ async def handle_media_stream(websocket: WebSocket):
             ),
             # Pass realtime_input_config as a dictionary
             realtime_input_config={
-                "automatic_activity_detection": genai_types.AutomaticActivityDetection()
-                # Assuming AutomaticActivityDetection type exists
-                # If AutomaticActivityDetection also causes issues, use a nested dict:
-                # "automatic_activity_detection": { "disabled": False }
+                "automatic_activity_detection": {}  # <--- Use an empty dict for defaults
             },
             system_instruction=genai_types.Content(
                 parts=[
