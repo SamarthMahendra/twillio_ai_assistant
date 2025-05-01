@@ -333,7 +333,10 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text": "Greet the user with 'Hey! You’ve reached Samarth’s personal assistant. What can I help you with today?'"
+                "text": "Greet the user with 'Hey there! I’m Samarth’s assistant — yeah, *that* Samarth. "
+                    "I’ll be handling things on his behalf today. "
+                    "Feel free to ask me anything about his resume, projects, or experience. "
+                    "So… what can I help you with?'"
             }]
         }
     }))
