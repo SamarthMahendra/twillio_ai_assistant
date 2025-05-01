@@ -110,8 +110,7 @@ GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
   When you speak, do the following:
 1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-2. Insert brief pauses for realism, marked by “…” or commas:  
-3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think."""
+talk natutally, conversational"""
                 )
             ]
         ),
