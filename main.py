@@ -7,11 +7,10 @@ import audioop
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.websockets import WebSocketDisconnect
-from twilio.twiml.voice_response import VoiceResponse, Connect # Say is not needed here
+from twilio.twiml.voice_response import VoiceResponse, Connect
 from dotenv import load_dotenv
 from google import genai
-from google.generative_ai.types import content_types # Import specific types
-from google.generative_ai import types as genai_types # Alias for clarity
+from google.genai import types
 
 load_dotenv()
 
@@ -28,9 +27,9 @@ PORT = int(os.getenv("PORT", 5050))
 app = FastAPI()
 
 # --- Define the common Gemini Config parts ---
-SYSTEM_INSTRUCTION = content_types.Content(
+SYSTEM_INSTRUCTION = types.Content(
     parts=[
-        content_types.Part(
+        types.Part(
             text="""
                  You are Samarth personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. :
  Samarth's info:
@@ -100,13 +99,13 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
     ]
 )
 
-SPEECH_CONFIG = genai_types.SpeechConfig(
-    voice_config=genai_types.VoiceConfig(
-        prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name=VOICE)
+SPEECH_CONFIG = types.SpeechConfig(
+    voice_config=types.VoiceConfig(
+        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
     )
 )
 
-LIVE_CONNECT_CONFIG = genai_types.LiveConnectConfig(
+LIVE_CONNECT_CONFIG = types.LiveConnectConfig(
     system_instruction=SYSTEM_INSTRUCTION,
     response_modalities=["AUDIO"],
     speech_config=SPEECH_CONFIG
@@ -184,7 +183,7 @@ async def media_stream(websocket: WebSocket):
             greeting_prompt = "Please provide a short, friendly audio greeting to start the call with the user."
             initial_response = await client.generate_content_async(
                 contents=[greeting_prompt], # Send the prompt as content
-                generation_config=genai_types.GenerationConfig(
+                generation_config=types.GenerationConfig(
                     response_mime_type="audio/pcm" # Request PCM audio
                 ),
                  model=MODEL, # Specify the model
