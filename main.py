@@ -110,7 +110,7 @@ GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
   When you speak, do the following:
 1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-talk natutally, conversational"""
+talk natutally, conversationally, and casually."""
                 )
             ]
         ),
