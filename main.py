@@ -130,7 +130,7 @@ talk natutally, conversationally, and casually."""
     # 3) Inject the raw JSON for realtimeInputConfig
     config_dict["realtimeInputConfig"] = {
         "automaticActivityDetection": {
-            "silenceDurationMs": 5_000
+            "silenceDurationMs": 3_000
         }
     }
 
