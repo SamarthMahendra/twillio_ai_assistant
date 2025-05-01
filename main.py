@@ -12,6 +12,7 @@ from twilio.twiml.voice_response import VoiceResponse, Connect
 from google.genai import Client as GenAIClient
 from google.genai import types as genai_types
 from google.api_core.exceptions import ClientError
+from fastapi.websockets import WebSocketState
 
 # --- Configuration & Setup ---
 load_dotenv()
