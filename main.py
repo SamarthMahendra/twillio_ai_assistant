@@ -4,7 +4,7 @@ import base64
 import asyncio
 
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect
 from dotenv import load_dotenv
@@ -25,9 +25,10 @@ PORT = int(os.getenv("PORT", 5050))
 
 app = FastAPI()
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=JSONResponse)
 async def health_check():
-    return {"message": "Twilio Media Stream Server running with Gemini Live API"}
+    # Health check endpoint returns JSON
+    return JSONResponse(content={"message": "Twilio Media Stream Server running with Gemini Live API"})
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def incoming_call(request: Request):
@@ -90,4 +91,5 @@ async def media_stream(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
+    print(f"Starting server on port {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
