@@ -26,7 +26,8 @@ PORT = int(os.getenv('PORT', 5050))
 TWILIO_SAMPLE_RATE = 8000
 GEMINI_INPUT_SAMPLE_RATE = 16000
 GEMINI_OUTPUT_SAMPLE_RATE = 24000
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', "gemini-1.5-flash-preview-0514")
+# *** Use a model compatible with the Live API ***
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', "gemini-2.0-flash-live-001") # CORRECTED DEFAULT MODEL
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 if not GEMINI_API_KEY:
@@ -319,24 +320,25 @@ async def handle_media_stream(websocket: WebSocket):
             await websocket.close(code=1011, reason="Server configuration error")
             return
 
-        # --- Configure and Connect to Gemini Live API (Minimal) ---
+        # --- Configure and Connect to Gemini Live API ---
+        # Use the corrected model name (set via env var or default above)
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
 
-        # *** Use MINIMAL configuration first ***
+        # Start with minimal config, then add back others if needed
         config = {
             "response_modalities": ["AUDIO"],
             # Add back other fields AFTER confirming connection works:
             # "speech_config": genai_types.SpeechConfig(),
             # "system_instruction": genai_types.Content(parts=[genai_types.Part(text="...")])
         }
-        logger.info(f"[{stream_sid}] Attempting to connect with MINIMAL config: {config}")
+        logger.info(f"[{stream_sid}] Attempting to connect with config: {config}")
 
         # Use try-except around the connection itself
         try:
             # ExperimentalWarning is expected, handled by SDK
             async with genai_client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
                 gemini_session = session
-                logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API with minimal config.")
+                logger.info(f"[{stream_sid}] Successfully connected to Gemini Live API.")
 
                 # --- Start Concurrent Tasks ---
                 twilio_task = asyncio.create_task(handle_twilio_to_gemini(websocket, gemini_session, stream_sid))
@@ -379,8 +381,13 @@ async def handle_media_stream(websocket: WebSocket):
              await websocket.close(code=1011, reason="Gemini Connection Error")
              return # Exit function after closing
         except Exception as e: # Catch other potential errors during config/connect
+             # This includes the websockets.exceptions.ConnectionClosedError
              logger.error(f"[{stream_sid}] Error during Gemini connection setup: {e}", exc_info=True)
-             await websocket.close(code=1011, reason="Gemini Connection Setup Error")
+             # Provide a more specific reason if possible based on the error type/message
+             reason = "Gemini Connection Setup Error"
+             if isinstance(e, ConnectionClosedError) and e.code == 1008:
+                  reason = "Model Not Supported or Found"
+             await websocket.close(code=1011, reason=reason)
              return # Exit function after closing
 
     except WebSocketDisconnect:
@@ -415,4 +422,3 @@ if __name__ == "__main__":
 
     logger.info(f">>> Starting Gemini Live API proxy server on port {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
