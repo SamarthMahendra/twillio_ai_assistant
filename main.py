@@ -121,7 +121,6 @@ talk natutally, conversationally, and casually."""
                     voice_name=VOICE,
                 )
             ),
-            language_code="en-US",
         ),
         realtime_input_config=types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(
