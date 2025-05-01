@@ -117,9 +117,17 @@ talk natutally, conversationally, and casually."""
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE),
-            )
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=VOICE,
+                )
+            ),
+            language_code="en-US",
         ),
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                silence_duration_ms=10_000  # wait up to 10 s of silence
+            )
+        )
     )
 
     # twist: store the Twilio stream SID so we can send back our audio
