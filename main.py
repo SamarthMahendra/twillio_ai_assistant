@@ -243,6 +243,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
             print(f"[ERROR] receive_from_twilio: {e}")
         finally:
             # No need to manually close the session when using async with
+            pass
     
     await receive_from_twilio()
 
