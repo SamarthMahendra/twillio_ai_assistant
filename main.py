@@ -34,7 +34,6 @@ PORT = int(os.getenv("PORT", 5050))
 app = FastAPI()
 
 # --- Define the common Gemini Config parts ---
-
 SYSTEM_INSTRUCTION = types.Content(parts=
 [types.Part(
 text="""You are Samarth personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. :
@@ -54,123 +53,80 @@ PROFESSIONAL EXPERIENCE:
 Draup, Bengaluru, India — Associate Software Development Engineer (Aug 2022 – Nov 2023):
 Maintained core platform features (digital tech stack, outsourcing, customer, and university pages).
 Designed internal dynamic query generation framework for real-time aggregation, improving chatbot performance by 60% and reducing entity development time by 80%.
-
 Revamped filters with logical operator flexibility and nested filtering (e.g., "(a AND b) OR c").
-
 Built 100+ modular Python/Django APIs across platform services.
-
 Implemented subscription-based access control system.
-
 Migrated APIs from PostgreSQL to Elasticsearch for real-time aggregation—achieved 5× faster response time.
-
 Used query optimization (partitioning, restructuring, indexing, views) to improve execution by 400% and reduce ops cost by 50%.
-
 Monitored platform health with Datadog and AWS CloudWatch, reducing downtime from 4% to 1% and improving issue resolution by 75%.
-
 Draup, Bengaluru, India — Associate Software Development Engineer Intern (Apr 2022 – Jun 2022):
-
 Debugged APIs using Datadog, reducing issue resolution time by 30%.
-
 Added image caching, reducing image load times by 70%.
-
 Wrote automated DB cleanup scripts to improve efficiency by 25%.
-
 PROJECTS & OUTSIDE EXPERIENCE:
-
 Open Jobs - Analytics (Dec 2024 – Present), Boston, MA:
-
 Inspired by Levels.fyi; aggregates 500+ job postings.
-
 Built producer-consumer system with Celery, monitored via Prometheus and Grafana (99.9% uptime).
-
 Used Playwright & Puppeteer to scrape 1000+ daily data points.
-
 Developed Python reverse proxy with router port-forwarding, reducing latency by 40%.
-
 Automated HTML/CSS selector extraction using LLMs, onboarding new companies 90% faster.
-
 LinkedIn Assist (LLM-powered Bot) (Remote):
-
 Built Chrome extension (Flask backend via CodeSandbox) to filter LinkedIn jobs using natural language prompts.
-
 Used GPT-3.5 for entity extraction and boolean query support (AND, OR, NOT), mimicking LinkedIn filters.
-
 Myocardium Wall Motion & Thickness Map (Patent Pending) — App No: 202341086278 (India), Bengaluru (Nov 2021 – Sep 2023):
-
 Mapped cine-series MRI scans for heart wall motion, fibrosis, and thickness during systole/diastole.
-
 Used custom algorithms for wall thickness and ambiguous zone measurements, improving precision by 50%.
-
 Parallelized with NumPy and multiprocessing, achieving 60× faster execution.
-
 Bike Rental System (Feb 2024 – Apr 2024), Boston, MA:
-
 Built full-stack system (React.js, Django, MySQL) deployed on Azure, Digital Ocean, Netlify.
-
 Added Redis caching and Datadog monitoring.
-
 Used JWT for secure login and protected resources.
-
 Stock Market Simulation App (Feb 2024 – Apr 2024), Boston, MA:
-
 Java MVC system managing stock investments with buy/sell tracking.
-
 Integrated APIs and data visualization (line/bar charts, moving averages, gain/loss trends).
-
 StackOverflow Clone (Feb 2025 – Apr 2025):
-
 Full-stack Q&A platform with React frontend and Node.js/Express backend using TypeScript.
-
 Followed MVC architecture; used Facade, Strategy, Validator, Factory patterns.
-
 Built end-to-end & integration tests using Jest and Cypress.
-
 Modern responsive UI with React Context and theme support.
-
 Skills: TypeScript, JavaScript, React.js, Node.js, MongoDB, Cypress, Jest, CodeQL, DevOps, Full-stack.
-
 Intelligent Agent System with Multi-LLM Integration (Apr 2025):
-
 Integrated OpenAI GPT-4 and Google Gemini with custom tools.
-
 Real-time communication via FastAPI WebSockets and Discord.
-
 Mongoose/MongoDB for persistent tool-call records.
-
 GitHub: Project Repox
-
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
 
 When you speak, do the following:
-
 1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-
 2. Insert brief pauses for realism, marked by “…” or commas:
-
 3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think."""
-
+)]
 )
 
-]
-
-)
-
-
-
-# --- Make sure SPEECH_CONFIG and LIVE_CONNECT_CONFIG are defined correctly ---
+# --- Define the common Gemini Config parts ---
 SPEECH_CONFIG = types.SpeechConfig(
     voice_config=types.VoiceConfig(
-        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
-    )
+        synthesizer_services_config=types.SynthesizerServicesConfig(
+            model_id=f"models/{VOICE}" # Use the model_id format
+        )
+    ),
+    # Request audio in PCM format suitable for conversion to mulaw
+    request_audio_format="audio/linear16; rate=24000", # Explicitly request 24kHz Linear16 PCM
 )
 
 LIVE_CONNECT_CONFIG = types.LiveConnectConfig(
     system_instruction=SYSTEM_INSTRUCTION,
-    response_modalities=["AUDIO"],
-    speech_config=SPEECH_CONFIG
+    response_modalities=["AUDIO"], # We want audio back
+    speech_config=SPEECH_CONFIG,
+    audio_input_config=types.AudioInputConfig( # Specify input audio format
+        mime_type="audio/linear16; rate=8000" # Incoming Twilio PCM is 8kHz
+    )
 )
 # --- End common config ---
 
+# Global flag to signal disconnection
+disconnect_signal = asyncio.Event()
 
 @app.get("/", response_class=JSONResponse)
 async def health_check():
@@ -181,41 +137,174 @@ async def incoming_call(request: Request):
     host = request.url.hostname
     response = VoiceResponse()
     connect = Connect()
+    # Set prefer_wav=true if possible to get linear16 directly, otherwise we handle mulaw
     connect.stream(url=f"wss://{host}/media-stream")
     response.append(connect)
     print(">>> /incoming-call: Sending TwiML to connect stream.")
     return HTMLResponse(content=str(response), media_type="application/xml")
 
-
-async def send_audio_to_twilio(websocket: WebSocket, stream_sid: str, pcm_audio: bytes):
-    """Helper function to process and send PCM audio to Twilio."""
-    if not pcm_audio:
+async def send_audio_to_twilio(websocket: WebSocket, stream_sid: str, pcm_audio_24khz: bytes):
+    """Helper function to process and send 24kHz PCM audio to Twilio as 8kHz mulaw."""
+    if not pcm_audio_24khz:
         print("[WARN] send_audio_to_twilio: No audio data to send.")
         return
     if not stream_sid:
         print("[ERROR] send_audio_to_twilio: stream_sid is None. Cannot send.")
         return
+    if disconnect_signal.is_set():
+        print(f"[INFO] send_audio_to_twilio: Disconnect signaled, skipping send for stream {stream_sid}.")
+        return
+
     try:
         start_send_time = time.time()
-        print(f"[{start_send_time:.2f}] send_audio_to_twilio: Processing {len(pcm_audio)} bytes for stream {stream_sid}...")
-        # Assuming Gemini outputs 24kHz mono PCM
-        pcm_resampled, _ = audioop.ratecv(pcm_audio, 2, 1, 24000, 8000, None)
-        mulaw = audioop.lin2ulaw(pcm_resampled, 2)
+        # print(f"[{start_send_time:.2f}] send_audio_to_twilio: Processing {len(pcm_audio_24khz)} bytes (24kHz) for stream {stream_sid}...")
+
+        # Convert 24kHz mono PCM to 8kHz mono PCM
+        # Input: pcm_audio_24khz, width=2 bytes, channels=1, rate=24000
+        # Output: rate=8000
+        pcm_resampled_8khz, _ = audioop.ratecv(pcm_audio_24khz, 2, 1, 24000, 8000, None)
+
+        # Convert 8kHz linear PCM to mulaw
+        mulaw = audioop.lin2ulaw(pcm_resampled_8khz, 2)
+
         payload = base64.b64encode(mulaw).decode('utf-8')
-        print(f"[{time.time():.2f}] send_audio_to_twilio: Sending {len(payload)} base64 chars payload...")
+        # print(f"[{time.time():.2f}] send_audio_to_twilio: Sending {len(payload)} base64 chars (8kHz mulaw) payload...")
+
         await websocket.send_json({
             "event": "media",
             "streamSid": stream_sid,
             "media": {"payload": payload}
         })
         end_send_time = time.time()
-        print(f"[{end_send_time:.2f}] send_audio_to_twilio: Send successful. Took {end_send_time - start_send_time:.3f}s")
+        # print(f"[{end_send_time:.2f}] send_audio_to_twilio: Send successful. Took {end_send_time - start_send_time:.3f}s")
     except audioop.error as e:
         print(f"[ERROR] send_audio_to_twilio: Audio processing error: {e}")
         traceback.print_exc()
+    except WebSocketDisconnect:
+         print(f"[WARN] send_audio_to_twilio: WebSocket disconnected while trying to send.")
+         disconnect_signal.set() # Signal disconnection
     except Exception as e:
-        print(f"[ERROR] send_audio_to_twilio: Failed to send JSON to WebSocket: {e}")
-        traceback.print_exc()
+        # Catch other potential errors during send, like broken pipe
+        if "disconnect" not in str(e).lower() and "connection" not in str(e).lower():
+            print(f"[ERROR] send_audio_to_twilio: Failed to send JSON to WebSocket: {e}")
+            traceback.print_exc()
+        else:
+             print(f"[WARN] send_audio_to_twilio: Connection closed/error during send: {e}")
+        disconnect_signal.set() # Signal disconnection
+
+
+# Task to handle receiving audio from Gemini and sending to Twilio
+async def handle_gemini_output(websocket: WebSocket, session: genai.live.LiveConnectSession, stream_sid: str):
+    print(f"[{time.time():.2f}] handle_gemini_output: Started for stream {stream_sid}.")
+    try:
+        async for response in session.receive():
+            if disconnect_signal.is_set():
+                print(f"[{time.time():.2f}] handle_gemini_output: Disconnect signaled, stopping.")
+                break
+            # print(f"[{time.time():.2f}] Received response chunk from Gemini") # Verbose
+            if response.data is not None:
+                 # print(f"[{time.time():.2f}] Gemini response has audio data ({len(response.data)} bytes)") # Verbose
+                 await send_audio_to_twilio(websocket, stream_sid, response.data)
+            # else:
+                # print(f"[{time.time():.2f}] Gemini response chunk has no audio data") # Verbose
+
+            # You might want to check for errors or specific message types here
+            # if response.server_error:
+            #      print(f"[ERROR] handle_gemini_output: Received server error: {response.server_error}")
+            #      break
+    except Exception as e:
+         # Handle potential errors during receive, e.g., session closed unexpectedly
+        if "disconnect" not in str(e).lower() and "connection" not in str(e).lower():
+            print(f"[ERROR] handle_gemini_output: Error receiving from Gemini: {e}")
+            traceback.print_exc()
+        else:
+            print(f"[WARN] handle_gemini_output: Session/connection closed during receive: {e}")
+    finally:
+        print(f"[{time.time():.2f}] handle_gemini_output: Finished for stream {stream_sid}.")
+        disconnect_signal.set() # Ensure disconnect is signaled if this task ends
+
+
+# Task to handle receiving audio from Twilio and sending to Gemini
+async def handle_twilio_input(websocket: WebSocket, session: genai.live.LiveConnectSession, stream_sid: str):
+    print(f"[{time.time():.2f}] handle_twilio_input: Started for stream {stream_sid}.")
+    audio_buffer = bytearray()
+    CHUNK_SIZE_MS = 20 # Process audio in 20ms chunks (standard for WebRTC/telephony)
+    SAMPLE_RATE_IN = 8000 # Twilio sends 8kHz
+    BYTES_PER_SAMPLE = 2 # 16-bit linear PCM after ulaw decode
+    CHUNK_SAMPLES = int(SAMPLE_RATE_IN * CHUNK_SIZE_MS / 1000)
+    CHUNK_BYTES = CHUNK_SAMPLES * BYTES_PER_SAMPLE
+
+    try:
+        while not disconnect_signal.is_set():
+            msg = await websocket.receive_text()
+            data = json.loads(msg)
+            event = data.get("event")
+
+            if event == "media":
+                # print(f"[{time.time():.2f}] Received Twilio media chunk") # Verbose
+                payload = data["media"]["payload"]
+                ulaw = base64.b64decode(payload)
+                try:
+                    # Convert 8kHz mulaw to 8kHz linear16 PCM
+                    pcm_8khz = audioop.ulaw2lin(ulaw, BYTES_PER_SAMPLE)
+                    audio_buffer.extend(pcm_8khz)
+
+                    # Send chunks of appropriate size to Gemini
+                    while len(audio_buffer) >= CHUNK_BYTES:
+                        chunk_to_send = audio_buffer[:CHUNK_BYTES]
+                        audio_buffer = audio_buffer[CHUNK_BYTES:]
+                        if not disconnect_signal.is_set():
+                             # print(f"[{time.time():.2f}] Sending {len(chunk_to_send)} bytes PCM to Gemini") # Verbose
+                             await session.stream_client_content(chunk_to_send)
+                        else:
+                            print(f"[{time.time():.2f}] handle_twilio_input: Disconnect signaled while processing buffer.")
+                            break # Exit inner loop if disconnected
+
+                except audioop.error as e:
+                     print(f"[ERROR] handle_twilio_input: Audio conversion error: {e}")
+                except Exception as stream_e:
+                    # Handle errors during streaming to Gemini
+                    if "disconnect" not in str(stream_e).lower() and "connection" not in str(stream_e).lower():
+                         print(f"[ERROR] handle_twilio_input: Error streaming to Gemini: {stream_e}")
+                         traceback.print_exc()
+                    else:
+                        print(f"[WARN] handle_twilio_input: Session/connection closed during stream: {stream_e}")
+                    disconnect_signal.set() # Signal disconnection
+                    break # Exit outer loop
+
+            elif event == "stop":
+                print(f"[{time.time():.2f}] handle_twilio_input: Stream stopped by Twilio.")
+                # Send any remaining buffered audio
+                if len(audio_buffer) > 0 and not disconnect_signal.is_set():
+                     print(f"[{time.time():.2f}] Sending final {len(audio_buffer)} bytes PCM to Gemini before stop.")
+                     try:
+                         await session.stream_client_content(audio_buffer)
+                     except Exception as final_stream_e:
+                         print(f"[ERROR] handle_twilio_input: Error streaming final buffer: {final_stream_e}")
+                disconnect_signal.set()
+                break # Exit loop on stop event
+
+            elif event == "mark":
+                 mark_name = data.get('mark', {}).get('name')
+                 print(f"[{time.time():.2f}] handle_twilio_input: Received mark: {mark_name}")
+                 # Optionally signal end of user speech based on marks
+                 # if mark_name == "end_of_speech_mark": # Example mark name
+                 #     await session.send_client_content(turn_complete=True)
+
+            # Ignore 'start' event if received again
+
+    except WebSocketDisconnect:
+        print(f"[{time.time():.2f}] handle_twilio_input: Twilio WebSocket disconnected.")
+    except Exception as e:
+        # Catch other errors like JSON parsing
+        if "disconnect" not in str(e).lower() and "connection" not in str(e).lower():
+            print(f"[ERROR] handle_twilio_input: Error processing WebSocket message: {e}")
+            traceback.print_exc()
+        else:
+            print(f"[WARN] handle_twilio_input: Connection error during receive: {e}")
+    finally:
+        print(f"[{time.time():.2f}] handle_twilio_input: Finished for stream {stream_sid}.")
+        disconnect_signal.set() # Ensure disconnect is signaled if this task ends
 
 
 @app.websocket("/media-stream")
@@ -225,112 +314,83 @@ async def media_stream(websocket: WebSocket):
     stream_sid = None
     client = None
     session = None
+    disconnect_signal.clear() # Reset signal for new connection
 
     try:
         # 1. Wait for the 'start' event from Twilio
         print(f"[{time.time():.2f}] /media-stream: Waiting for Twilio start event...")
-        while stream_sid is None:
-            try:
-                msg = await asyncio.wait_for(websocket.receive_text(), timeout=10.0) # Add timeout
-                data = json.loads(msg)
-                event = data.get("event")
-                print(f"[{time.time():.2f}] /media-stream: Received event '{event}' while waiting for start.")
-                if event == "start":
-                    stream_sid = data["start"]["streamSid"]
-                    print(f"[{time.time():.2f}] /media-stream: Stream started: {stream_sid}")
-                elif event == "stop":
-                    print(f"[{time.time():.2f}] /media-stream: Stream stopped by Twilio before processing could start.")
-                    await websocket.close()
-                    return
-            except asyncio.TimeoutError:
-                print(f"[{time.time():.2f}] /media-stream: Timeout waiting for Twilio start event.")
-                await websocket.close()
-                return
-            except WebSocketDisconnect:
-                 print(f"[{time.time():.2f}] /media-stream: WebSocket disconnected while waiting for start.")
-                 return # Exit if disconnected
+        start_msg = await asyncio.wait_for(websocket.receive_text(), timeout=20.0) # Increased timeout
+        start_data = json.loads(start_msg)
+        if start_data.get("event") == "start":
+            stream_sid = start_data["start"]["streamSid"]
+            print(f"[{time.time():.2f}] /media-stream: Stream started: {stream_sid}")
+            # You might get media packets immediately after start, handle this later
+        else:
+            print(f"[WARN] /media-stream: Expected 'start' event, got '{start_data.get('event')}'")
+            await websocket.close(code=1002) # Protocol error
+            return
 
         # 2. Initialize Gemini Client
         print(f"[{time.time():.2f}] /media-stream: Initializing Gemini Client.")
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.GenerativeModel(model_name=MODEL) # Use GenerativeModel for LiveConnect
 
-        # 3. Generate the initial greeting
-        print(f"[{time.time():.2f}] /media-stream: Generating initial greeting from Gemini...")
-        initial_audio_pcm = None
-        try:
-            generation_start_time = time.time()
-            greeting_prompt = "Hey! You’ve reached Samarth’s personal assistant. What can I help you with today?" # More direct prompt
-            initial_response = await client.generate_content_async(
-                contents=[greeting_prompt],
-                generation_config=types.GenerationConfig(
-                    response_mime_type="audio/pcm"
-                ),
-                 model=MODEL,
-                 request_options={"speech_config": SPEECH_CONFIG}
-            )
-            generation_end_time = time.time()
-            print(f"[{generation_end_time:.2f}] /media-stream: Gemini generation took {generation_end_time - generation_start_time:.3f}s")
-
-            if initial_response.candidates and initial_response.candidates[0].content.parts:
-                part = initial_response.candidates[0].content.parts[0]
-                if hasattr(part, 'audio_data') and part.audio_data:
-                     initial_audio_pcm = part.audio_data
-                     print(f"[{time.time():.2f}] /media-stream: Generated initial greeting audio ({len(initial_audio_pcm)} bytes).")
-                     # 4. Send the initial greeting audio to Twilio
-                     await send_audio_to_twilio(websocket, stream_sid, initial_audio_pcm)
-                else:
-                    print("[WARN] /media-stream: Gemini response part did not contain audio data.")
-            else:
-                print("[WARN] /media-stream: Gemini did not return valid candidates/parts for the initial greeting.")
-
-        except Exception as e:
-            print(f"[ERROR] /media-stream: Failed during initial greeting generation or sending: {e}")
-            traceback.print_exc() # Print full traceback
-
-
-        # 5. Start the main streaming interaction loop
-        print(f"[{time.time():.2f}] /media-stream: Starting Gemini live connection for conversation...")
-        async with client.aio.live.connect(model=MODEL, config=LIVE_CONNECT_CONFIG) as session:
+        # 3. Start the main streaming interaction loop with LiveConnect
+        print(f"[{time.time():.2f}] /media-stream: Starting Gemini live connection...")
+        async with client.connect_live(config=LIVE_CONNECT_CONFIG) as session:
             print(f"[{time.time():.2f}] /media-stream: Gemini live session connected.")
-            # Generator to yield PCM audio from Twilio
-            async def twilio_audio_stream_post_greeting():
-                try:
-                    while True:
-                        msg = await websocket.receive_text()
-                        data = json.loads(msg)
-                        event = data.get("event")
-                        if event == "media":
-                            # Don't process media if stream_sid isn't set (shouldn't happen here, but safe)
-                            if not stream_sid:
-                                continue
-                            # print(f"[{time.time():.2f}] Received Twilio media chunk") # Verbose logging if needed
-                            ulaw = base64.b64decode(data["media"]["payload"])
-                            pcm = audioop.ulaw2lin(ulaw, 2)
-                            yield pcm
-                        elif event == "stop":
-                            print(f"[{time.time():.2f}] /media-stream: Stream stopped by Twilio during conversation.")
-                            break
-                        elif event == "mark":
-                             print(f"[{time.time():.2f}] /media-stream: Received mark: {data.get('mark', {}).get('name')}")
-                        # Ignore 'start' event if received again
-                except WebSocketDisconnect:
-                    print(f"[{time.time():.2f}] /media-stream: Twilio WebSocket disconnected during conversation.")
-                except Exception as gen_e:
-                     print(f"[ERROR] /media-stream: Error in twilio_audio_stream_post_greeting: {gen_e}")
-                     traceback.print_exc()
-                finally:
-                    print(f"[{time.time():.2f}] /media-stream: Audio stream generator finished.")
 
-            # Stream subsequent audio to Gemini and receive responses
-            print(f"[{time.time():.2f}] /media-stream: Starting session.start_stream loop...")
-            async for response in session.start_stream(stream=twilio_audio_stream_post_greeting(), mime_type="audio/pcm"):
-                # print(f"[{time.time():.2f}] Received response chunk from Gemini") # Verbose
-                if hasattr(response, 'data') and response.data:
-                    # print(f"[{time.time():.2f}] Gemini response has audio data ({len(response.data)} bytes)") # Verbose
-                    await send_audio_to_twilio(websocket, stream_sid, response.data)
-                # else:
-                    # print(f"[{time.time():.2f}] Gemini response chunk has no audio data") # Verbose
+            # 4. Send the initial *text* prompt to make the model speak first
+            initial_greeting_text = "Hey! You’ve reached Samarth’s personal assistant. What can I help you with today?"
+            print(f"[{time.time():.2f}] /media-stream: Sending initial text prompt to Gemini: '{initial_greeting_text}'")
+            try:
+                 # Ensure the structure matches what LiveConnect expects for initial turn
+                 initial_request = LiveConnectRequest(
+                     user_content=types.Content(parts=[types.Part(text=initial_greeting_text)]),
+                     turn_complete=True # Signal this is the end of the (programmatic) user's turn
+                 )
+                 await session.send_client_content(initial_request)
+                 print(f"[{time.time():.2f}] /media-stream: Initial text prompt sent.")
+            except Exception as init_send_e:
+                 print(f"[ERROR] /media-stream: Failed to send initial text prompt: {init_send_e}")
+                 traceback.print_exc()
+                 disconnect_signal.set() # Signal failure
 
+
+            # 5. Start concurrent tasks for bidirectional streaming
+            if not disconnect_signal.is_set():
+                twilio_input_task = asyncio.create_task(
+                    handle_twilio_input(websocket, session, stream_sid)
+                )
+                gemini_output_task = asyncio.create_task(
+                    handle_gemini_output(websocket, session, stream_sid)
+                )
+
+                # Wait for either task to complete (e.g., due to disconnect or stop)
+                done, pending = await asyncio.wait(
+                    [twilio_input_task, gemini_output_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+
+                print(f"[{time.time():.2f}] /media-stream: One of the tasks completed.")
+                # Signal disconnect to potentially stop the other task gracefully
+                disconnect_signal.set()
+                # Cancel pending tasks to ensure they exit
+                for task in pending:
+                    print(f"[{time.time():.2f}] /media-stream: Cancelling pending task...")
+                    task.cancel()
+                    try:
+                        await task # Wait for cancellation to complete
+                    except asyncio.CancelledError:
+                        print(f"[{time.time():.2f}] /media-stream: Task cancelled successfully.")
+                    except Exception as task_wait_e:
+                         print(f"[ERROR] /media-stream: Error waiting for cancelled task: {task_wait_e}")
+
+            else:
+                 print(f"[{time.time():.2f}] /media-stream: Disconnect signaled before starting tasks.")
+
+
+    except asyncio.TimeoutError:
+        print(f"[{time.time():.2f}] /media-stream: Timeout waiting for Twilio start event.")
     except WebSocketDisconnect:
         print(f"[{time.time():.2f}] /media-stream: WebSocket disconnected (outer scope).")
     except Exception as e:
@@ -338,15 +398,26 @@ async def media_stream(websocket: WebSocket):
         traceback.print_exc()
     finally:
         print(f"[{time.time():.2f}] /media-stream: Cleaning up...")
+        disconnect_signal.set() # Ensure signal is set during cleanup
         # Ensure WebSocket is closed
         try:
+            # Check state before attempting to close
             if websocket.client_state == websocket.client_state.CONNECTED:
                  await websocket.close()
                  print(f"[{time.time():.2f}] /media-stream: WebSocket closed.")
+            elif websocket.client_state == websocket.client_state.CONNECTING:
+                 print(f"[{time.time():.2f}] /media-stream: WebSocket was still connecting during cleanup.")
+                 # You might try closing here too, but it might fail
+                 try: await websocket.close()
+                 except: pass
+            else:
+                 print(f"[{time.time():.2f}] /media-stream: WebSocket already closed or disconnected during cleanup.")
         except Exception as close_e:
+            # Catch potential errors if closing fails (e.g., already closed)
             print(f"[{time.time():.2f}] /media-stream: Error closing WebSocket: {close_e}")
 
 if __name__ == "__main__":
     import uvicorn
     print(f"Starting server on port {PORT}")
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    # Consider adding reload=True for development, but remove for production
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT, ws_ping_interval=20, ws_ping_timeout=20) # Added main:app for clarity if file is named main.py and added ping settings
