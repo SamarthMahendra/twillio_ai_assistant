@@ -118,7 +118,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE), language_code="en-GB",
             )
         ),
     )
