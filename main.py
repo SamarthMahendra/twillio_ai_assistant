@@ -16,7 +16,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
 model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
 PORT = int(os.getenv('PORT', 5050))
-VOICE = 'coral'
+VOICE = os.getenv('VOICE', 'coral')
 SHOW_TIMING_MATH = False
 
 SYSTEM_MESSAGE = (
