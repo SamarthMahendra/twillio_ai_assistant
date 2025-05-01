@@ -49,7 +49,8 @@ async def media_stream(websocket: WebSocket):
             parts=[
                 types.Part(
                     text="""
-                    You are a helpful AI assistant. Greet the caller warmly and ask how you can help them today.
+                    You are a helpful AI assistant. When you first hear someone say hello, greet them warmly, 
+                    introduce yourself, and ask how you can help them today. Be friendly and conversational.
                     """
                 )
             ]
@@ -77,9 +78,29 @@ async def media_stream(websocket: WebSocket):
         await websocket.close()
         return
 
+    # Generate dummy "hello" PCM audio (silent audio with a simple greeting flag)
+    # This is a simple approach - create a short silent PCM audio sample
+    # We're using this as a trigger to make Gemini respond first
+    def dummy_hello_audio():
+        # Simple 16-bit silent PCM audio (8000Hz, 500ms)
+        # We'll yield this once to trigger Gemini's greeting
+        yield b'\x00\x00' * 4000  # 500ms of silence at 8kHz (16-bit)
+
+        # We need to exit the generator after sending the initial sample
+        # to allow the real audio stream to take over
+        return
+        yield  # This line is never reached
+
     # Generator to yield PCM audio from Twilio mu-law stream
     async def twilio_audio_stream():
         nonlocal stream_sid
+
+        # First yield the dummy hello audio to trigger Gemini's greeting
+        print("Sending dummy hello audio to trigger Gemini greeting")
+        for dummy_audio in dummy_hello_audio():
+            yield dummy_audio
+
+        # Then start processing the real audio stream from Twilio
         try:
             while True:
                 msg = await websocket.receive_text()
@@ -98,32 +119,7 @@ async def media_stream(websocket: WebSocket):
 
     async with client.aio.live.connect(model=MODEL, config=config) as session:
         try:
-            # Make Gemini speak first by sending an initial message
-            await session.send_client_content(
-                turns={"role": "user", "parts": [{"text": "Hello, please introduce yourself to the caller."}]},
-                turn_complete=True
-            )
-
-            # First, process the initial greeting response
-            async for response in session.receive():
-                if getattr(response, 'data', None):
-                    pcm_out = response.data
-                    # Downsample and convert PCM to mu-law for Twilio
-                    pcm_resampled, _ = audioop.ratecv(pcm_out, 2, 1, 24000, 8000, None)
-                    mulaw = audioop.lin2ulaw(pcm_resampled, 2)
-                    payload = base64.b64encode(mulaw).decode('utf-8')
-                    await websocket.send_json({
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {"payload": payload}
-                    })
-
-                # Break out of this loop when the initial greeting is complete
-                if hasattr(response, 'server_content') and getattr(response.server_content, 'generation_complete',
-                                                                   False):
-                    break
-
-            # Then continue with the regular conversation stream
+            # Use the stream method that works with the AsyncSession object
             async for response in session.start_stream(stream=twilio_audio_stream(),
                                                        mime_type="audio/pcm"):  # type: ignore
                 if getattr(response, 'data', None):
