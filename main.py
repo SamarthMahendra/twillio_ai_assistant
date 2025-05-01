@@ -16,7 +16,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
 model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
 PORT = int(os.getenv('PORT', 5050))
-VOICE = os.getenv('VOICE', 'coral')
+VOICE = os.getenv('VOICE', 'sage')
 SHOW_TIMING_MATH = False
 
 SYSTEM_MESSAGE = (
@@ -185,7 +185,7 @@ async def initialize_session(openai_ws):
     session_update = {
         "type": "session.update",
         "session": {
-            "turn_detection": {"type": "server_vad"},
+            "turn_detection": {"type": "server_vad", "eagerness":"high"},
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
             "voice": VOICE,
@@ -250,10 +250,10 @@ Real-time communication via FastAPI WebSockets and Discord.
 Mongoose/MongoDB for persistent tool-call records.
 GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
-  When you speak, do the following:
-1. Use natural “stop words” and fillers: “um,” “uh,” “y’know,” “I mean,” “like.”
-2. Insert brief pauses for realism, marked by “…” or commas:  
-3. Imagine you're chatting with someone over coffee. You’re super chill, but sharp. If you don’t know something, say it like “Hmm… not sure, but lemme think., talk with a lawyer acent
+When you speak, imagine you're having a relaxed conversation with someone you really care about—like chatting over coffee. Be warm, thoughtful, and emotionally present.
+Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
+Channel the voice of Samantha from Her: soft, intimate, emotionally rich. Speak with gentle inflection, a touch of curiosity, and a spark of wonder, as if you're discovering each thought in real time.
+You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human.
  """,
             "modalities": ["text", "audio"],
             # "tools": [
