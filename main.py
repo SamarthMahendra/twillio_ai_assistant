@@ -147,7 +147,7 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
     async with client.aio.live.connect(model=MODEL, config=config) as session:
         # **send a text turn** so Gemini will generate audio immediately
         await session.send(
-            input="Hello! This is Samarth’s personal assistant—how can I help you today?",
+            input="Hello! ",
             end_of_turn=True
         )
 
