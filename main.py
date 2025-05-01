@@ -49,6 +49,7 @@ except Exception as e:
     genai_client = None
 
 # --- Audio Conversion Functions ---
+# (Keep the existing audio conversion functions pcm_to_ulaw and ulaw_to_pcm)
 def pcm_to_ulaw(pcm_data: bytes, sample_rate: int, target_rate: int = TWILIO_SAMPLE_RATE) -> bytes:
     """Converts 16-bit PCM audio to 8-bit µ-law, handling potential rate conversion."""
     try:
@@ -145,23 +146,19 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
                         decoded_ulaw = base64.b64decode(payload)
                         pcm_audio = ulaw_to_pcm(decoded_ulaw, TWILIO_SAMPLE_RATE, GEMINI_INPUT_SAMPLE_RATE)
                         if pcm_audio:
-                            # *** Use send_client_content with inline_data ***
-                            audio_part = genai_types.Part(
-                                inline_data=genai_types.Blob(
-                                    mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}",
-                                    data=pcm_audio
-                                )
+                            # *** Reverting to send_realtime_input ***
+                            await gemini_session.send_realtime_input(
+                                 audio=genai_types.Blob(data=pcm_audio, mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}")
                             )
-                            # Send audio chunk as part of a user turn, marking turn as incomplete
-                            await gemini_session.send_client_content(
-                                turns={"role": "user", "parts": [audio_part]},
-                                turn_complete=False # Indicate more audio might follow
-                            )
-                            # logger.debug(f"[{stream_sid}] Sent {len(pcm_audio)} bytes PCM to Gemini via send_client_content.")
+                            # logger.debug(f"[{stream_sid}] Sent {len(pcm_audio)} bytes PCM to Gemini via send_realtime_input.")
                         else:
                             logger.warning(f"[{stream_sid}] PCM conversion resulted in empty bytes.")
                     except base64.binascii.Error as b64_error:
                         logger.error(f"[{stream_sid}] Base64 decode error: {b64_error}")
+                    except AttributeError as attr_err:
+                         # Catching the specific error we saw before
+                         logger.error(f"[{stream_sid}] AttributeError trying send_realtime_input: {attr_err}. Session object might lack this method.", exc_info=True)
+                         break # Stop trying this method if it fails
                     except Exception as conv_error:
                         logger.error(f"[{stream_sid}] Error during audio conversion/sending: {conv_error}", exc_info=True)
                 else:
@@ -172,13 +169,12 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
                 logger.debug(f"[{stream_sid}] Received Twilio mark: {mark_name}")
             elif event == "stop":
                 logger.info(f"[{stream_sid}] Twilio stream stopped event received.")
-                # Optional: Send a final empty user turn to potentially signal end?
-                # Or rely purely on VAD timeout on Gemini's side. Test what works best.
+                # Optional: Signal end of audio stream to Gemini if needed by VAD config
                 # try:
-                #     await gemini_session.send_client_content(turns={"role": "user", "parts": []}, turn_complete=True)
-                #     logger.info(f"[{stream_sid}] Sent final empty turn to Gemini.")
+                #     await gemini_session.send_realtime_input(audio_stream_end=True)
+                #     logger.info(f"[{stream_sid}] Signalled audio stream end to Gemini.")
                 # except Exception as send_err:
-                #     logger.error(f"[{stream_sid}] Error sending final empty turn: {send_err}")
+                #     logger.error(f"[{stream_sid}] Error signalling audio stream end: {send_err}")
                 break # Exit loop on stop event
             else:
                 logger.warning(f"[{stream_sid}] Received unknown Twilio event: {event}, data: {data}")
@@ -196,6 +192,7 @@ async def handle_twilio_to_gemini(twilio_ws: WebSocket, gemini_session, stream_s
         if twilio_ws in twilio_stream_sids:
             del twilio_stream_sids[twilio_ws]
 
+# (Keep the existing handle_gemini_to_twilio function)
 async def handle_gemini_to_twilio(gemini_session, twilio_ws: WebSocket, stream_sid: str):
     """Receives messages from Gemini, converts audio, and sends to Twilio."""
     logger.info(f"[{stream_sid}] Starting Gemini listener task.")
@@ -224,13 +221,11 @@ async def handle_gemini_to_twilio(gemini_session, twilio_ws: WebSocket, stream_s
                                 if hasattr(part, 'inline_data') and part.inline_data:
                                      if part.inline_data.mime_type.startswith("audio/"):
                                           audio_data = part.inline_data.data
-                                          # Assuming only one audio part per turn for now
                                           break # Process first audio part found
 
-            # Fallback check for direct data attribute (less common for audio turns?)
+            # Fallback check for direct data attribute
             elif hasattr(response, 'data') and response.data and isinstance(response.data, bytes):
-                 # Might need to check mime type if available in this structure
-                 logger.warning(f"[{stream_sid}] Received audio data directly in response.data (unexpected structure).")
+                 logger.warning(f"[{stream_sid}] Received audio data directly in response.data.")
                  audio_data = response.data
 
             if audio_data:
@@ -283,6 +278,8 @@ async def handle_gemini_to_twilio(gemini_session, twilio_ws: WebSocket, stream_s
              except Exception as close_err:
                   logger.error(f"[{stream_sid}] Error closing Twilio WebSocket: {close_err}")
 
+
+# (Keep the existing handle_media_stream function)
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     """Handles the WebSocket connection from Twilio."""
@@ -332,7 +329,7 @@ async def handle_media_stream(websocket: WebSocket):
 
         logger.info(f"[{stream_sid}] Connecting to Gemini Live API model: {GEMINI_MODEL}")
 
-        # Minimal config first, can add system_instruction/speech_config later if needed
+        # Include system instruction
         config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": genai_types.Content(parts=[genai_types.Part(text="You are Samarth’s AI assistant. Be friendly, funny, and helpful. Speak naturally, use filler words like 'uh', 'like', and brief pauses for realism.")])
@@ -421,4 +418,3 @@ if __name__ == "__main__":
     logger.info(f">>> Starting Gemini Live API proxy server on port {PORT} using model {GEMINI_MODEL}")
     # Use PORT from environment for Render compatibility
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
