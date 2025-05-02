@@ -166,6 +166,7 @@ async def handle_media_stream(websocket: WebSocket):
                             }
                             awaiting_response_call_id = None
                             await openai_ws.send(json.dumps(event))
+                            openai_ws.send(json.dumps({"type": "response.create"}))
                     if response.get('type') in LOG_EVENT_TYPES:
                         print(f"### LOG_EVENT: {json.dumps(response)}")
 
@@ -216,6 +217,7 @@ async def handle_media_stream(websocket: WebSocket):
                                             }
                                         }
                                         await openai_ws.send(json.dumps(event))
+                                        await openai_ws.send(json.dumps({"type": "response.create"}))
 
 
 
