@@ -493,7 +493,6 @@ script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
 
 script2_intial = """
  "Greet the user with , Hey there! I’m calling on behalf of Samarth Mahendra. 
-he's, like, this super thoughtful and talented engineer based in Boston.
 Um, I just wanted to check in and see if your team is currently hiring—or, y'know, open to exploring profiles right now.
 """
 
