@@ -8,12 +8,54 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
-from celery_worker import celery_app, tool_call_fn
+from celery_worker import celery_app, tool_call_fn, add_meeting_to_db
 from mongo_tool import save_tool_message, get_tool_message_status
+import datetime
+import mongo_tool
+
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+
+
+
+def generate_jitsi_meeting_url(user_name=None):
+    from mongo_tool import insert_meeting
+    base_url = "https://meet.jit.si/"
+
+    # connvert into a html link
+    if user_name:
+        meeting_name = f"{user_name}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    else:
+        meeting_name = f"SamarthMeeting-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+
+    return base_url + meeting_name
+
+
+
+def schedule_meeting(args):
+    # args: dict with keys members, agenda, timing, user_email
+    members = args.get("members", [])
+    agenda = args.get("agenda")
+    timing = args.get("timing")
+    user_email = args.get("user_email")
+    # Always include Samarth
+    if "samarth@samarthmahendra.com" not in members:
+        members.append("samarth@samarthmahendra.com")
+    print(members, agenda, timing, user_email)
+    meeting_url = generate_jitsi_meeting_url("samarth")
+    meeting_url_full = '<a href="{}">{}</a>'.format(meeting_url, meeting_url)
+    meeting_id = mongo_tool.insert_meeting(members, agenda, timing, meeting_url)
+
+    print(" Sending email : ", user_email, meeting_url)
+    tool_call_fn.delay("send_meeting_email", None, {"email": user_email, "meeting_url": meeting_url})
+
+    # ping samarth on discord about the meeting
+    # celery_app.send_task("tool_call_fn", args=("talk_to_samarth_discord", None, {"action": "send", "message": {"content": f"Meeting scheduled with {', '.join(members)} on {timing} for {agenda}. Meeting link: {meeting_url}"}}))
+    tool_call_fn.delay("talk_to_samarth_discord", None, {"action": "send", "message": {"content": f"Meeting scheduled with {', '.join(members)} on {timing} for {agenda}. Meeting link: {meeting_url}"}})
+    return {"meeting_url": meeting_url_full, "meeting_id": meeting_id}
 
 
 script1 = """You are Samarth Mahendra’s ersonal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
@@ -87,7 +129,7 @@ You're playful, but grounded. Vulnerable, yet confident. If you’re unsure abou
 script2 = """
  
  You are Samarth Mahendra’s Personal assistant who usually talks to recruiters or anyone who is interested in samarth's profile or would want to hire him. : 
- 
+ You can also schedule meetings with samarth and send emails to the users. ( you can schedule without confirming with samarth)
  Samarth's info:         
             MARASANIGE SAMARTH MAHENDRA | Phone: +1 (857) 707-1671 | Email: samarth.mahendragowda@gmail.com | Location: Boston, MA, USA | LinkedIn | GitHub
 EDUCATION:
@@ -341,8 +383,8 @@ async def handle_media_stream(websocket: WebSocket):
                                         print(f"### Talk to samarth discord {call_id}")
                                         print(f"### Function call name: {name}")
                                         print(f"### Function call args: {args}")
-                                        tool_call_fn.delay(name, call_id, args)
-                                        awaiting_response_call_id = call_id
+                                        result = schedule_meeting(args)
+                                        # awaiting_response_call_id = call_id
                                         event = {
                                             "type": "conversation.item.create",
                                             "item": {
@@ -414,24 +456,25 @@ async def initialize_session(openai_ws):
             "tools": [
                 {
                     "type": "function",
-                    "name": "add meeting to db",
-                    "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
+                    "name": "schedule_meeting_on_jitsi",
+                    "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting and don't need to ask for Samarth's availability",
                     "parameters": {
                         "type": "object",
-                        "required": ["action", "message"],
                         "properties": {
-                            "message": {
-                                "type": "object",
-                                "properties": {
-                                    "content": {"type": "string", "description": "The content of the message"}
-                                },
-                                "required": ["content"],
-                                "additionalProperties": False
-                            }
+                            "members": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of member emails (apart from Samarth)"
+                            },
+                            "agenda": {"type": "string", "description": "Agenda for the meeting"},
+                            "timing": {"type": "string", "description": "Meeting time/date in ISO format"},
+                            "user_email": {"type": "string",
+                                           "description": "Email of the user scheduling the meeting (for invite)"}
                         },
-                        "additionalProperties": False
-                    },
-                },
+                        "required": ["members", "agenda", "timing", "user_email"]
+                    }
+                }
+                ,
                 # {
                 #     "type": "function",
                 #     "name": "query_profile_info",
