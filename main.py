@@ -15,6 +15,7 @@ import uuid
 import mongo_tool
 
 
+
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -224,6 +225,25 @@ async def index_page():
     return {"message": "Twilio Media Stream Server is running!"}
 
 
+# import redis
+import redis
+
+
+class Redis:
+
+    def __int__(self):
+        REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        self.redis = redis.from_url(REDIS_URL)
+
+    def set_key(self, key, value):
+        self.redis.set(key, value)
+
+    def get_key(self, key):
+        return self.redis.get(key)
+
+redis = Redis()
+
+
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def handle_incoming_call(request: Request):
     print(">>> [POST] /incoming-call - Incoming call received.")
@@ -232,6 +252,11 @@ async def handle_incoming_call(request: Request):
     script = request.query_params.get("script", "1")
 
     print(">>> [POST] /incoming-call - Incoming call received. with ", script)
+
+    # add to redis with key as script
+
+    redis.set_key("script", script)
+
 
 
     print(f"### Host extracted from request: {host}")
@@ -274,81 +299,23 @@ discord_tool_schema = {
 
 
 
-# @app.websocket("/media-stream")
-# async def handle_media_stream(websocket: WebSocket):
-#     print(">>> WebSocket /media-stream connected")
-#     await websocket.accept()
-#
-#     print(">>> WebSocket /media-stream received with ", script)
-#
-#     web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17"
-#     async with websockets.connect(
-#         web_socket_url,
-#         extra_headers={
-#             "Authorization": f"Bearer {OPENAI_API_KEY}",
-#             "OpenAI-Beta": "realtime=v1"
-#         }
-#     ) as openai_ws:
-#         print("### Connected to OpenAI Realtime API WebSocket.")
-#         await initialize_session(openai_ws, script)
-#
-#         stream_sid = None
-#         latest_media_timestamp = 0
-#         last_assistant_item = None
-#         mark_queue = []
-#         response_start_timestamp_twilio = None
-#         awaiting_response_call_id = None
-#
-#         async def receive_from_twilio():
-#             nonlocal stream_sid, latest_media_timestamp, awaiting_response_call_id
-#             try:
-#                 async for message in websocket.iter_text():
-#
-#
-#                     data = json.loads(message)
-#                     print(f"<<< [Twilio → Server] Event: {data.get('event')}")
-#                     if data['event'] == 'media' and openai_ws.open:
-#                         latest_media_timestamp = int(data['media']['timestamp'])
-#                         print(f"### Received media payload at {latest_media_timestamp}ms")
-#                         audio_append = {
-#                             "type": "input_audio_buffer.append",
-#                             "audio": data['media']['payload']
-#                         }
-#                         await openai_ws.send(json.dumps(audio_append))
-#                     elif data['event'] == 'start':
-#                         stream_sid = data['start']['streamSid']
-#                         print(f"### Stream started: {stream_sid}")
-#                         response_start_timestamp_twilio = None
-#                         latest_media_timestamp = 0
-#                         last_assistant_item = None
-#                     elif data['event'] == 'mark':
-#                         print(">>> Received 'mark' from Twilio.")
-#                         if mark_queue:
-#                             mark_queue.pop(0)
-#             except WebSocketDisconnect:
-#                 print(">>> [Twilio] WebSocket disconnected.")
-#                 if openai_ws.open:
-#                     await openai_ws.close()
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
     await websocket.accept()
 
-    script = "1"  # default fallback; will be overwritten in 'start' event
-    print(">>> Awaiting start event to determine script...")
 
-    # Connect to OpenAI realtime websocket
     web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17"
     async with websockets.connect(
-            web_socket_url,
-            extra_headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "OpenAI-Beta": "realtime=v1"
-            }
+        web_socket_url,
+        extra_headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "OpenAI-Beta": "realtime=v1"
+        }
     ) as openai_ws:
         print("### Connected to OpenAI Realtime API WebSocket.")
+        await initialize_session(openai_ws)
 
-        # Declare outer-scoped vars
         stream_sid = None
         latest_media_timestamp = 0
         last_assistant_item = None
@@ -357,22 +324,14 @@ async def handle_media_stream(websocket: WebSocket):
         awaiting_response_call_id = None
 
         async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp, awaiting_response_call_id, script
+            nonlocal stream_sid, latest_media_timestamp, awaiting_response_call_id
             try:
                 async for message in websocket.iter_text():
+
+
                     data = json.loads(message)
                     print(f"<<< [Twilio → Server] Event: {data.get('event')}")
-
-                    if data['event'] == 'start':
-                        stream_sid = data['start']['streamSid']
-                        stream_name = data['start'].get('name', '')
-                        print(f"### Stream started: {stream_sid}, name: {stream_name}")
-                        if stream_name.startswith("script_"):
-                            script = stream_name.replace("script_", "")
-                            print("### Script value set from stream name:", script)
-                        await initialize_session(openai_ws, script)
-
-                    elif data['event'] == 'media' and openai_ws.open:
+                    if data['event'] == 'media' and openai_ws.open:
                         latest_media_timestamp = int(data['media']['timestamp'])
                         print(f"### Received media payload at {latest_media_timestamp}ms")
                         audio_append = {
@@ -380,7 +339,12 @@ async def handle_media_stream(websocket: WebSocket):
                             "audio": data['media']['payload']
                         }
                         await openai_ws.send(json.dumps(audio_append))
-
+                    elif data['event'] == 'start':
+                        stream_sid = data['start']['streamSid']
+                        print(f"### Stream started: {stream_sid}")
+                        response_start_timestamp_twilio = None
+                        latest_media_timestamp = 0
+                        last_assistant_item = None
                     elif data['event'] == 'mark':
                         print(">>> Received 'mark' from Twilio.")
                         if mark_queue:
@@ -506,7 +470,7 @@ async def handle_media_stream(websocket: WebSocket):
         await asyncio.gather(receive_from_twilio(), send_to_twilio())
 
 
-async def initialize_session(openai_ws, script="1"):
+async def initialize_session(openai_ws):
     print(">>> Initializing OpenAI Realtime session.")
 
     session_update = {
@@ -580,7 +544,7 @@ async def initialize_session(openai_ws, script="1"):
     print(">>> Session update sent to OpenAI.")
 
     # Uncomment below to have assistant speak first
-    await send_initial_conversation_item(openai_ws, script)
+    await send_initial_conversation_item(openai_ws)
 
 
 
@@ -603,6 +567,9 @@ async def send_initial_conversation_item(openai_ws, script):
      "Greet the user with , Hey! Uh, you’re talking to Samarth Mahendra’s assistant. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
     """
     print(">>> Sending initial AI message to start conversation.")
+
+    script = redis.get_key("script")
+
     if script == "1":
         script2_intial = script1_intial
     else:
