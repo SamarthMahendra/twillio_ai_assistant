@@ -564,18 +564,21 @@ async def send_initial_conversation_item(openai_ws):
                         "Feel free to ask me anything about his resume, projects, or experience. "
                         "So… what can I help you with?'"""
     script2_intial = """
-     "Greet the user with , Hey! Uh, you’re talking to Samarth Mahendra’s assistant. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
+     "Greet the user with , Hey! Uh, I’m calling on behalf of Samarth Mahendra. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
     """
     print(">>> Sending initial AI message to start conversation.")
 
     script = cache.get_key("script")
 
+    print(" got script from redis : ", script)
+    temp = None
     if script == "1":
-        script2_intial = script1_intial
+        temp = script1_intial
     else:
-        script2_intial = script2_intial
-
+        temp = script2_intial
+    print("Reset script to 1")
     cache.set_key("script", "1")
+
     print("Using, ", script)
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
@@ -584,7 +587,7 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text":script2_intial
+                "text":temp
             }]
         }
     }))
