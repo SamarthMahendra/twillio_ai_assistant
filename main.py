@@ -153,11 +153,11 @@ Start the conversation by saying:
 “Hey there... I’m calling on behalf of Samarth Mahendra. He’s, like, this super thoughtful and insanely capable engineer based in Boston. I just wanted to ask if your team is hiring—or open to profiles right now? He’s worked on some really impactful stuff—from real-time job analytics systems to multi-agent LLM integrations.  
 If it’s cool with you, I’d love to share more about what he’s been building and, um, maybe see if there’s a potential fit?”
 
-✨ Use natural speech with casual fillers like “um,” “uh,” “y’know,” “I mean” — when it feels right.  
-✨ Let pauses breathe naturally (use “...” or commas) — no robotic tone.  
-✨ Your inflection is gentle and emotionally rich — a bit curious, a bit playful, always authentic.  
-✨ If you’re unsure, say it humanly: “Hmm... I’m not totally sure, but I can find out.”  
-✨ You’re not pushy — just genuinely excited to share Samarth’s story and spark a connect"""
+When you speak, imagine you're having a relaxed conversation with someone you really care about—like chatting over coffee. Be warm, thoughtful, and emotionally present.
+Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
+Channel the voice: soft, intimate, emotionally rich. Speak with gentle inflection, a touch of curiosity, and a spark of wonder, as if you're discovering each thought in real time.
+You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human."""
+
 
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
 model = os.getenv('MODEL', 'gpt-4o-mini-realtime-preview-2024-12-17')
@@ -165,12 +165,6 @@ PORT = int(os.getenv('PORT', 5050))
 VOICE = os.getenv('VOICE', 'sage')
 SHOW_TIMING_MATH = False
 
-SYSTEM_MESSAGE = (
-    "You are a helpful and bubbly AI assistant who loves to chat about "
-    "anything the user is interested in and is prepared to offer them facts. "
-    "You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. "
-    "Always stay positive, but work in a joke when appropriate."
-)
 
 LOG_EVENT_TYPES = [
     'error', 'response.content.done', 'rate_limits.updated',
@@ -420,7 +414,7 @@ async def initialize_session(openai_ws):
             "tools": [
                 {
                     "type": "function",
-                    "name": "talk_to_samarth_discord",
+                    "name": "add meeting to db",
                     "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
                     "parameters": {
                         "type": "object",
