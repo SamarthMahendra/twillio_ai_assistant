@@ -420,6 +420,36 @@ async def send_initial_conversation_item(openai_ws):
     }))
     await openai_ws.send(json.dumps({"type": "response.create"}))
 
+from twilio.rest import Client
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+# +1 833 970 3274
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "+18339703274")
+
+twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+@app.post("/start-calls")
+async def start_calls(request: Request):
+    body = await request.json()
+    numbers = body.get("numbers", [+18577071671])  # List of phone numbers
+
+    results = []
+    for number in numbers:
+        try:
+            call = twilio_client.calls.create(
+                to=number,
+                from_=TWILIO_FROM_NUMBER,
+                url="https://twillio-ai-assistant.onrender.com/incoming-call"  # 🔥 static full URL
+            )
+            results.append({"to": number, "sid": call.sid})
+            print(f"✅ Calling {number}")
+            await asyncio.sleep(15)  # Wait between calls to avoid overlap or rate limiting
+        except Exception as e:
+            results.append({"to": number, "error": str(e)})
+
+    return {"status": "done", "calls": results}
+
 
 if __name__ == "__main__":
     import uvicorn
