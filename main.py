@@ -233,15 +233,15 @@ class Redis:
 
     def __int__(self):
         REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-        self.redis = redis.from_url(REDIS_URL)
+        self.r = redis.from_url(REDIS_URL)
 
     def set_key(self, key, value):
-        self.redis.set(key, value)
+        self.r.set(key, value)
 
     def get_key(self, key):
-        return self.redis.get(key)
+        return self.r.get(key)
 
-redis = Redis()
+cache = Redis()
 
 
 @app.api_route("/incoming-call", methods=["GET", "POST"])
@@ -255,7 +255,7 @@ async def handle_incoming_call(request: Request):
 
     # add to redis with key as script
 
-    redis.set_key("script", script)
+    cache.set_key("script", script)
 
 
 
@@ -568,12 +568,14 @@ async def send_initial_conversation_item(openai_ws, script):
     """
     print(">>> Sending initial AI message to start conversation.")
 
-    script = redis.get_key("script")
+    script = cache.get_key("script")
 
     if script == "1":
         script2_intial = script1_intial
     else:
         script2_intial = script2_intial
+
+    cache.set_key("script", "1")
     print("Using, ", script)
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
