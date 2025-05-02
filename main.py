@@ -231,7 +231,7 @@ import redis
 
 class Redis:
 
-    def __int__(self):
+    def __init__(self):
         REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
         self.r = redis.from_url(REDIS_URL)
 
