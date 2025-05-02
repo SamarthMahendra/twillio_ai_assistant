@@ -121,21 +121,6 @@ async def handle_media_stream(websocket: WebSocket):
 
                     data = json.loads(message)
                     print(f"<<< [Twilio → Server] Event: {data.get('event')}")
-                    if awaiting_response_call_id:
-                        status, message = get_tool_message_status(awaiting_response_call_id)
-                        if status == "completed":
-                            print(f"### Tool call completed: {message}")
-                            awaiting_response_call_id = None
-                            event = {
-                              "type": "conversation.item.create",
-                              "item": {
-                                "type": "function_call_output",
-                                "call_id": str(awaiting_response_call_id),
-                                "output": str(message)
-                              }
-                            }
-                            awaiting_response_call_id = None
-                            await openai_ws.send(json.dumps(event))
                     if data['event'] == 'media' and openai_ws.open:
                         latest_media_timestamp = int(data['media']['timestamp'])
                         print(f"### Received media payload at {latest_media_timestamp}ms")
@@ -165,6 +150,22 @@ async def handle_media_stream(websocket: WebSocket):
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
                     print(f">>> [OpenAI → Server] Event: {response.get('type')}")
+                    if awaiting_response_call_id:
+                        print("### Awaiting response call ID:", awaiting_response_call_id)
+                        status, message = get_tool_message_status(awaiting_response_call_id)
+                        if status == "completed":
+                            print(f"### Tool call completed: {message}")
+                            awaiting_response_call_id = None
+                            event = {
+                              "type": "conversation.item.create",
+                              "item": {
+                                "type": "function_call_output",
+                                "call_id": str(awaiting_response_call_id),
+                                "output": str(message)
+                              }
+                            }
+                            awaiting_response_call_id = None
+                            await openai_ws.send(json.dumps(event))
                     if response.get('type') in LOG_EVENT_TYPES:
                         print(f"### LOG_EVENT: {json.dumps(response)}")
 
