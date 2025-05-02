@@ -8,6 +8,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
+from celery_worker import celery_app, tool_call_fn
+import mongo_tool
 
 load_dotenv()
 
@@ -61,6 +63,34 @@ async def handle_incoming_call(request: Request):
     return HTMLResponse(content=str(response), media_type="application/xml")
 
 
+discord_tool_schema = {
+    "type": "function",
+    "name": "talk_to_samarth_discord",
+    "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
+    "parameters": {
+        "type": "object",
+        "required": ["action", "message"],
+        "properties": {
+            "action": {
+                "type": "string",
+                "description": "The action to perform, either 'send' or 'receive'"
+            },
+            "message": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "The content of the message"},
+                },
+                "required": ["content"],
+                "additionalProperties": False
+            }
+        },
+        "additionalProperties": False
+    },
+    "strict": True
+}
+
+
+
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
@@ -81,11 +111,28 @@ async def handle_media_stream(websocket: WebSocket):
         last_assistant_item = None
         mark_queue = []
         response_start_timestamp_twilio = None
+        awaiting_response_call_id = None
 
         async def receive_from_twilio():
-            nonlocal stream_sid, latest_media_timestamp
+            nonlocal stream_sid, latest_media_timestamp, awaiting_response_call_id
             try:
                 async for message in websocket.iter_text():
+                    if awaiting_response_call_id:
+                        status, message = mongo_tool.get_tool_message_status(awaiting_response_call_id)
+                        if status == "completed":
+                            print(f"### Tool call completed: {message}")
+                            awaiting_response_call_id = None
+                            event = {
+                              "type": "conversation.item.create",
+                              "item": {
+                                "type": "function_call_output",
+                                "call_id": str(awaiting_response_call_id),
+                                "output": str(message)
+                              }
+                            }
+                            await openai_ws.send(json.dumps())
+                            awaiting_response_call_id = None
+
                     data = json.loads(message)
                     print(f"<<< [Twilio → Server] Event: {data.get('event')}")
                     if data['event'] == 'media' and openai_ws.open:
@@ -112,7 +159,7 @@ async def handle_media_stream(websocket: WebSocket):
                     await openai_ws.close()
 
         async def send_to_twilio():
-            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio
+            nonlocal stream_sid, last_assistant_item, response_start_timestamp_twilio, awaiting_response_call_id
             try:
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
@@ -139,6 +186,31 @@ async def handle_media_stream(websocket: WebSocket):
                             print(f"### Updated last_assistant_item: {last_assistant_item}")
 
                         await send_mark(websocket, stream_sid)
+                    elif response.get('type') == 'response.done':
+                        response_json =  response.get('response', {})
+                        if response_json['output'][0]['type'] == 'function_call':
+                            call_id = response_json['output'][0]['id']
+                            name = response_json['output'][0]['name']
+                            args = response_json['output'][0]['arguments']
+
+                            if name == 'talk_to_samarth_discord':
+                                tool_call_fn.delay("talk_to_samarth_discord",call_id , args)
+                                awaiting_response_call_id = call_id
+
+                                event = {
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [{
+                                        "type": "input_text",
+                                        "text": f"tell that {name} was called to user, in a professional way"
+                                    }]
+                                }}
+                                await openai_ws.send(json.dumps(event))
+
+
+
 
                     elif response.get('type') == 'input_audio_buffer.speech_started':
                         print(">>> Detected speech started – interrupting response.")
@@ -256,64 +328,60 @@ Channel the voice: soft, intimate, emotionally rich. Speak with gentle inflectio
 You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human.
  """,
             "modalities": ["text", "audio"],
-            # "tools": [
-            #     {
-            #         "type": "function",
-            #         "name": "talk_to_samarth_discord",
-            #         "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
-            #         "parameters": {
-            #             "type": "object",
-            #             "required": ["action", "message"],
-            #             "properties": {
-            #                 "action": {
-            #                     "type": "string",
-            #                     "description": "The action to perform, either 'send' or 'receive'"
-            #                 },
-            #                 "message": {
-            #                     "type": "object",
-            #                     "properties": {
-            #                         "content": {"type": "string", "description": "The content of the message"}
-            #                     },
-            #                     "required": ["content"],
-            #                     "additionalProperties": False
-            #                 }
-            #             },
-            #             "additionalProperties": False
-            #         },
-            #     },
-            #     {
-            #         "type": "function",
-            #         "name": "query_profile_info",
-            #         "description": "Function to query profile information, requiring no input parameters for Job fit or any resume information.",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {},
-            #             "additionalProperties": False
-            #         }
-            #     },
-            #     {
-            #         "type": "function",
-            #         "name": "schedule_meeting_on_jitsi",
-            #         "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting",
-            #         "parameters": {
-            #             "type": "object",
-            #             "properties": {
-            #                 "members": {
-            #                     "type": "array",
-            #                     "items": {"type": "string"},
-            #                     "description": "List of member emails (apart from Samarth)"
-            #                 },
-            #                 "agenda": {"type": "string", "description": "Agenda for the meeting"},
-            #                 "timing": {"type": "string",
-            #                            "description": "Timing for the meeting (ISO format or natural language)"},
-            #                 "user_email": {"type": "string",
-            #                                "description": "Email of the user scheduling the meeting (for invite)"}
-            #             },
-            #             "required": ["members", "agenda", "timing", "user_email"]
-            #         }
-            #     }
-            # ],
-            # "tool_choice": "auto",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "talk_to_samarth_discord",
+                    "description": "Send a message to samarth via Discord bot integration only once, and wait for a reply",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["action", "message"],
+                        "properties": {
+                            "message": {
+                                "type": "object",
+                                "properties": {
+                                    "content": {"type": "string", "description": "The content of the message"}
+                                },
+                                "required": ["content"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "additionalProperties": False
+                    },
+                },
+                # {
+                #     "type": "function",
+                #     "name": "query_profile_info",
+                #     "description": "Function to query profile information, requiring no input parameters for Job fit or any resume information.",
+                #     "parameters": {
+                #         "type": "object",
+                #         "properties": {},
+                #         "additionalProperties": False
+                #     }
+                # },
+                # {
+                #     "type": "function",
+                #     "name": "schedule_meeting_on_jitsi",
+                #     "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting",
+                #     "parameters": {
+                #         "type": "object",
+                #         "properties": {
+                #             "members": {
+                #                 "type": "array",
+                #                 "items": {"type": "string"},
+                #                 "description": "List of member emails (apart from Samarth)"
+                #             },
+                #             "agenda": {"type": "string", "description": "Agenda for the meeting"},
+                #             "timing": {"type": "string",
+                #                        "description": "Timing for the meeting (ISO format or natural language)"},
+                #             "user_email": {"type": "string",
+                #                            "description": "Email of the user scheduling the meeting (for invite)"}
+                #         },
+                #         "required": ["members", "agenda", "timing", "user_email"]
+                #     }
+                # }
+            ],
+            "tool_choice": "auto",
             "temperature": 0.85,
         }
     }
