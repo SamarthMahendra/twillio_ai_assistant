@@ -191,10 +191,6 @@ Mongoose/MongoDB for persistent tool-call records.
 GitHub: Project Repox
 Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
  You’re reaching out *on Samarth’s behalf*. Your tone is warm, kind, grounded—like chatting over coffee with someone you truly care about.  
-Start the conversation by saying:
-
-“Hey there... I’m calling on behalf of Samarth Mahendra. He’s, like, this super thoughtful and insanely capable engineer based in Boston. I just wanted to ask if your team is hiring—or open to profiles right now? He’s worked on some really impactful stuff—from real-time job analytics systems to multi-agent LLM integrations.  
-If it’s cool with you, I’d love to share more about what he’s been building and, um, maybe see if there’s a potential fit?”
 
 When you speak, imagine you're having a relaxed conversation with someone you really care about—like chatting over coffee. Be warm, thoughtful, and emotionally present.
 Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
@@ -232,12 +228,14 @@ async def index_page():
 async def handle_incoming_call(request: Request):
     print(">>> [POST] /incoming-call - Incoming call received.")
     host = request.url.hostname
+    # get script from url path
+    script1 = request.query_params.get("script1", 1)
     print(f"### Host extracted from request: {host}")
 
     response = VoiceResponse()
 
     connect = Connect()
-    connect.stream(url=f'wss://{host}/media-stream')
+    connect.stream(url=f'wss://{host}/media-stream?script={script1}')
     response.append(connect)
 
     print(">>> Returning TwiML response.")
@@ -276,6 +274,10 @@ discord_tool_schema = {
 async def handle_media_stream(websocket: WebSocket):
     print(">>> WebSocket /media-stream connected")
     await websocket.accept()
+
+    # get script from url path
+    script = websocket.query_params.get("script", 1)
+
     web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17"
     async with websockets.connect(
         web_socket_url,
@@ -285,7 +287,7 @@ async def handle_media_stream(websocket: WebSocket):
         }
     ) as openai_ws:
         print("### Connected to OpenAI Realtime API WebSocket.")
-        await initialize_session(openai_ws)
+        await initialize_session(openai_ws, script)
 
         stream_sid = None
         latest_media_timestamp = 0
@@ -441,7 +443,7 @@ async def handle_media_stream(websocket: WebSocket):
         await asyncio.gather(receive_from_twilio(), send_to_twilio())
 
 
-async def initialize_session(openai_ws):
+async def initialize_session(openai_ws, script=1):
     print(">>> Initializing OpenAI Realtime session.")
 
     session_update = {
@@ -515,7 +517,7 @@ async def initialize_session(openai_ws):
     print(">>> Session update sent to OpenAI.")
 
     # Uncomment below to have assistant speak first
-    await send_initial_conversation_item(openai_ws)
+    await send_initial_conversation_item(openai_ws, script)
 
 
 
@@ -529,14 +531,15 @@ script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
 #         "Um, I just wanted to check in and see if your team is currently hiring—or, y'know, open to exploring profiles right now.
 
 script2_intial = """
- "Greet the user with , Hey there! I’m calling on behalf of Samarth Mahendra. 
-Um, I just wanted to check in and see if your team is currently hiring for SDE or, y'know, open to exploring profiles right now.
+ "Greet the user with , Hey! Uh, you’re talking to Samarth Mahendra’s assistant. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
 """
 
 
 
-async def send_initial_conversation_item(openai_ws):
+async def send_initial_conversation_item(openai_ws, script):
     print(">>> Sending initial AI message to start conversation.")
+    if script == 1:
+        script2_intial = script1_intial
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
         "item": {
@@ -569,7 +572,7 @@ async def start_calls(request: Request):
             call = twilio_client.calls.create(
                 to=number,
                 from_=TWILIO_FROM_NUMBER,
-                url="https://twillio-ai-assistant.onrender.com/incoming-call"  # 🔥 static full URL
+                url="https://twillio-ai-assistant.onrender.com/incoming-call?script=2"  # 🔥 static full URL
             )
             results.append({"to": number, "sid": call.sid})
             print(f"✅ Calling {number}")
