@@ -558,7 +558,7 @@ async def initialize_session(openai_ws):
 
 
 
-async def send_initial_conversation_item(openai_ws, script):
+async def send_initial_conversation_item(openai_ws):
     script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
                         "I’ll be handling things on his behalf today. "
                         "Feel free to ask me anything about his resume, projects, or experience. "
