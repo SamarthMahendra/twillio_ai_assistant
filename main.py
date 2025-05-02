@@ -432,7 +432,7 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 @app.post("/start-calls")
 async def start_calls(request: Request):
     body = await request.json()
-    numbers = body.get("numbers", [+18577071671])  # List of phone numbers
+    numbers = body.get("numbers", ["+18577071671"])  # List of phone numbers
 
     results = []
     for number in numbers:
