@@ -187,13 +187,18 @@ async def handle_media_stream(websocket: WebSocket):
 
                         await send_mark(websocket, stream_sid)
                     elif response.get('type') == 'response.done':
-                        response_json =  response.get('response', {})
+                        print(">>> Response done.")
+                        # {"type": "response.done", "event_id": "event_BSazQ8OJePBDoJR9TptDL", "response": {"object": "realtime.response", "id": "resp_BSazN9VuVFMWMa7GieUmL", "status": "completed", "status_details": null, "output": [{"id": "item_BSazNPWj57SNTND1zajMa", "object": "realtime.item", "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "audio", "transcript": "I can help with that. To check if Samarth is available on Saturday, I'll need to send him a quick message and see if he responds. Give me a moment."}]}, {"id": "item_BSazPgDVisjfaAhjwqKvJ", "object": "realtime.item", "type": "function_call", "status": "completed", "name": "talk_to_samarth_discord", "call_id": "call_pjAKkU7ZjcnxUpcb", "arguments": "{\"message\":{\"content\":\"Hey Samarth, could you let me know if you're available this Saturday?\"}}"}], "conversation_id": "conv_BSaz5wnSd39q1ZXleZkPC", "modalities": ["text", "audio"], "voice": "sage", "output_audio_format": "g711_ulaw", "temperature": 0.85, "max_output_tokens": "inf", "usage": {"total_tokens": 2031, "input_tokens": 1786, "output_tokens": 245, "input_token_details": {"text_tokens": 1493, "audio_tokens": 293, "cached_tokens": 1728, "cached_tokens_details": {"text_tokens": 1472, "audio_tokens": 256}}, "output_token_details": {"text_tokens": 86, "audio_tokens": 159}}, "metadata": null}}
+                        response_json = json.loads(openai_message)
                         if response.get('output', {}) and response_json['output'] and response_json['output'][0] and response_json['output'][0].get('type', {}) and response_json['output'][0]['type'] == 'function_call':
                             call_id = response_json['output'][0]['id']
                             name = response_json['output'][0]['name']
-                            args = response_json['output'][0]['arguments']
 
+                            args = json.loads(response_json['output'][0]['arguments'])
                             if name == 'talk_to_samarth_discord':
+                                print(f"### Talk to samarth discord {call_id}")
+                                print(f"### Function call name: {name}")
+                                print(f"### Function call args: {args}")
                                 tool_call_fn.delay("talk_to_samarth_discord",call_id , args)
                                 awaiting_response_call_id = call_id
 
