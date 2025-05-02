@@ -5,7 +5,7 @@ import logging
 from celery import Celery
 from discord_tool import ask_and_get_reply
 import asyncio
-from mongo_tool import save_tool_message, query_mongo_db_for_candidate_profile
+from mongo_tool import save_tool_message, query_mongo_db_for_candidate_profile, save_meeting_via_call
 
 
 # Set up detailed logging
@@ -36,6 +36,44 @@ celery_app.conf.update(
     enable_utc=True,
 )
 logger.info(f"[Celery Worker] Celery configuration: {celery_app.conf}")
+
+
+@celery_app.task(bind=True)
+def add_meeting_to_db(args):
+    logger.info("[Celery Worker] Sending meeting email to %s", args.get("email"))
+    import smtplib
+    from email.message import EmailMessage
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
+    sender = smtp_user or "no-reply@samarthmahendra.com"
+    recipient = args.get("email")
+    meeting_url = args.get("meeting_url")
+    subject = "Your Meeting Link with Samarth"
+    body = f"Hello,\n\nHere is your Jitsi meeting link: {meeting_url}\n\nSee you there!\n\nRegards,\nSamarth Mahendra"
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(body)
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        logger.info(f"[Celery Worker] Email sent to {recipient}")
+        result = {"status": "sent", "recipient": recipient}
+    except Exception as e:
+        logger.error(f"[Celery Worker] Failed to send email: {e}")
+        result = {"status": "error", "error": str(e)}
+
+    # insert meeting details into MongoDB under meetings_via_calls
+    save_meeting_via_call(args)
+    logger.info(f"[Celery Worker] Saved meeting details for recipient={recipient}")
+    return result
+
+
 
 
 

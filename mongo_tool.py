@@ -3,6 +3,7 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import datetime
 
+
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://stackoverflow:stackoverflow%40123@cluster0.3kqbc.mongodb.net/myDatabase?retryWrites=true&w=majority&appName=Cluster0")
@@ -12,6 +13,8 @@ COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "candidate_profiles")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
+
+
 
 
 def insert_meeting(members, agenda, timing, meeting_url):
@@ -86,6 +89,35 @@ def save_tool_message(call_id, name, args, result):
     }
     messages_collection = db["messages"]
     insert_result = messages_collection.insert_one(message_dict)
+    return str(insert_result.inserted_id)
+
+
+def save_meeting_via_call(args):
+    """Save meeting details via call ID."""
+    """properties": {
+                            "members": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of member emails (apart from Samarth)"
+                            },
+                            "agenda": {"type": "string", "description": "Agenda for the meeting"},
+                            "timing": {"type": "string", "description": "Meeting time/date in ISO format"},
+                            "user_email": {"type": "string",
+                                           "description": "Email of the user scheduling the meeting (for invite)"}
+                        },
+                        "required": ["members", "agenda", "timing", "user_email"]
+     """
+    meeting_dict = {
+        "members": args["members"],
+        "agenda": args["agenda"],
+        "timing": args["timing"],  # should be a datetime object or ISO string
+        "user_email": args["user_email"],
+
+    }
+    print(" Inserted meeting details:", meeting_dict)
+    meetings_collection = db["meetings_via_calls"]
+    insert_result = meetings_collection.insert_one(meeting_dict)
+    print(" Inserted meeting ID:", insert_result.inserted_id)
     return str(insert_result.inserted_id)
 
 

@@ -379,23 +379,22 @@ async def handle_media_stream(websocket: WebSocket):
                                     call_id = item.get('call_id')
                                     name = item.get('name')
                                     args = json.loads(item.get('arguments', '{}'))
-                                    if name == 'talk_to_samarth_discord':
-                                        print(f"### Talk to samarth discord {call_id}")
+                                    if name == 'schedule_meeting_on_jitsi':
+                                        print(f"### schedulinh meeting {call_id}")
                                         print(f"### Function call name: {name}")
                                         print(f"### Function call args: {args}")
                                         result = schedule_meeting(args)
                                         # awaiting_response_call_id = call_id
+
                                         event = {
                                             "type": "conversation.item.create",
                                             "item": {
-                                                "type": "message",
-                                                "role": "user",
-                                                "content": [{
-                                                    "type": "input_text",
-                                                    "text": f"tell that {name} was called to user, in a professional way"
-                                                }]
+                                                "type": "function_call_output",
+                                                "call_id": str(awaiting_response_call_id),
+                                                "output": str(result)
                                             }
                                         }
+                                        awaiting_response_call_id = None
                                         await openai_ws.send(json.dumps(event))
                                         await openai_ws.send(json.dumps({"type": "response.create"}))
 
