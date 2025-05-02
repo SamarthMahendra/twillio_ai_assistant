@@ -239,7 +239,11 @@ class Redis:
         self.r.set(key, value)
 
     def get_key(self, key):
-        return self.r.get(key)
+        # get in str format not bytes
+        value = self.r.get(key)
+        if value:
+            return value.decode('utf-8')
+        return None
 
 cache = Redis()
 
