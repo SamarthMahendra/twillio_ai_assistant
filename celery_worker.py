@@ -3,9 +3,10 @@
 import os
 import logging
 from celery import Celery
-import mongo_tool
 import discord_tool
 import asyncio
+from mongo_tool import save_tool_message, query_mongo_db_for_candidate_profile
+
 
 # Set up detailed logging
 logging.basicConfig(
@@ -47,7 +48,7 @@ def tool_call_fn(self, tool_name, call_id, args):
             result = discord_tool.ask_and_get_reply(args["message"]["content"])
         elif tool_name == "query_profile_info":
             logger.info("[Celery Worker] Calling mongo_tool.query_mongo_db_for_candidate_profile")
-            result = mongo_tool.query_mongo_db_for_candidate_profile()
+            result = query_mongo_db_for_candidate_profile()
         elif tool_name == "send_meeting_email":
             logger.info("[Celery Worker] Sending meeting email to %s", args.get("email"))
             import smtplib
@@ -82,7 +83,7 @@ def tool_call_fn(self, tool_name, call_id, args):
 
         logger.info(f"[Celery Worker] Task result: {result}")
         if call_id:
-            mongo_tool.save_tool_message(call_id, tool_name, args, result)
+            save_tool_message(call_id, tool_name, args, result)
         logger.info(f"[Celery Worker] Saved tool message for call_id={call_id}")
         return result
     except Exception as e:

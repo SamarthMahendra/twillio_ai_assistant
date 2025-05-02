@@ -9,7 +9,7 @@ from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
 from celery_worker import celery_app, tool_call_fn
-import mongo_tool
+from mongo_tool import save_tool_message, get_tool_message_status
 
 load_dotenv()
 
@@ -118,7 +118,7 @@ async def handle_media_stream(websocket: WebSocket):
             try:
                 async for message in websocket.iter_text():
                     if awaiting_response_call_id:
-                        status, message = mongo_tool.get_tool_message_status(awaiting_response_call_id)
+                        status, message = get_tool_message_status(awaiting_response_call_id)
                         if status == "completed":
                             print(f"### Tool call completed: {message}")
                             awaiting_response_call_id = None
