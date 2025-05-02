@@ -130,7 +130,7 @@ async def handle_media_stream(websocket: WebSocket):
                                 "output": str(message)
                               }
                             }
-                            await openai_ws.send(json.dumps())
+                            await openai_ws.send(json.dumps(event))
                             awaiting_response_call_id = None
 
                     data = json.loads(message)
@@ -189,30 +189,31 @@ async def handle_media_stream(websocket: WebSocket):
                     elif response.get('type') == 'response.done':
                         print(">>> Response done.")
                         # {"type": "response.done", "event_id": "event_BSazQ8OJePBDoJR9TptDL", "response": {"object": "realtime.response", "id": "resp_BSazN9VuVFMWMa7GieUmL", "status": "completed", "status_details": null, "output": [{"id": "item_BSazNPWj57SNTND1zajMa", "object": "realtime.item", "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "audio", "transcript": "I can help with that. To check if Samarth is available on Saturday, I'll need to send him a quick message and see if he responds. Give me a moment."}]}, {"id": "item_BSazPgDVisjfaAhjwqKvJ", "object": "realtime.item", "type": "function_call", "status": "completed", "name": "talk_to_samarth_discord", "call_id": "call_pjAKkU7ZjcnxUpcb", "arguments": "{\"message\":{\"content\":\"Hey Samarth, could you let me know if you're available this Saturday?\"}}"}], "conversation_id": "conv_BSaz5wnSd39q1ZXleZkPC", "modalities": ["text", "audio"], "voice": "sage", "output_audio_format": "g711_ulaw", "temperature": 0.85, "max_output_tokens": "inf", "usage": {"total_tokens": 2031, "input_tokens": 1786, "output_tokens": 245, "input_token_details": {"text_tokens": 1493, "audio_tokens": 293, "cached_tokens": 1728, "cached_tokens_details": {"text_tokens": 1472, "audio_tokens": 256}}, "output_token_details": {"text_tokens": 86, "audio_tokens": 159}}, "metadata": null}}
-                        response_json = json.loads(openai_message)
-                        if response.get('output', {}) and response_json['output'] and response_json['output'][0] and response_json['output'][0].get('type', {}) and response_json['output'][0]['type'] == 'function_call':
-                            call_id = response_json['output'][0]['id']
-                            name = response_json['output'][0]['name']
-
-                            args = json.loads(response_json['output'][0]['arguments'])
-                            if name == 'talk_to_samarth_discord':
-                                print(f"### Talk to samarth discord {call_id}")
-                                print(f"### Function call name: {name}")
-                                print(f"### Function call args: {args}")
-                                tool_call_fn.delay("talk_to_samarth_discord",call_id , args)
-                                awaiting_response_call_id = call_id
-
-                                event = {
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "message",
-                                    "role": "user",
-                                    "content": [{
-                                        "type": "input_text",
-                                        "text": f"tell that {name} was called to user, in a professional way"
-                                    }]
-                                }}
-                                await openai_ws.send(json.dumps(event))
+                        response_json = response.get('response', {})
+                        if response_json.get('output'):
+                            for item in response_json['output']:
+                                if item.get('type') == 'function_call':
+                                    call_id = item.get('call_id')
+                                    name = item.get('name')
+                                    args = json.loads(item.get('arguments', '{}'))
+                                    if name == 'talk_to_samarth_discord':
+                                        print(f"### Talk to samarth discord {call_id}")
+                                        print(f"### Function call name: {name}")
+                                        print(f"### Function call args: {args}")
+                                        tool_call_fn.delay(name, call_id, args)
+                                        awaiting_response_call_id = call_id
+                                        event = {
+                                            "type": "conversation.item.create",
+                                            "item": {
+                                                "type": "message",
+                                                "role": "user",
+                                                "content": [{
+                                                    "type": "input_text",
+                                                    "text": f"tell that {name} was called to user, in a professional way"
+                                                }]
+                                            }
+                                        }
+                                        await openai_ws.send(json.dumps(event))
 
 
 
@@ -406,7 +407,7 @@ async def send_initial_conversation_item(openai_ws):
             "role": "user",
             "content": [{
                 "type": "input_text",
-                "text": "Greet the user with 'Hey there! I’m Samarth’s assistant — yeah, *that* Samarth. "
+                "text": "Greet the user with 'Hey there! I’m Samarth’s assistant"
                     "I’ll be handling things on his behalf today. "
                     "Feel free to ask me anything about his resume, projects, or experience. "
                     "So… what can I help you with?'"
