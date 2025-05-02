@@ -188,7 +188,7 @@ async def handle_media_stream(websocket: WebSocket):
                         await send_mark(websocket, stream_sid)
                     elif response.get('type') == 'response.done':
                         response_json =  response.get('response', {})
-                        if response_json['output'][0]['type'] == 'function_call':
+                        if response.get('output', {}) and response_json['output'] and response_json['output'][0] and response_json['output'][0].get('type', {}) and response_json['output'][0]['type'] == 'function_call':
                             call_id = response_json['output'][0]['id']
                             name = response_json['output'][0]['name']
                             args = response_json['output'][0]['arguments']
