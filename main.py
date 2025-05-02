@@ -117,6 +117,10 @@ async def handle_media_stream(websocket: WebSocket):
             nonlocal stream_sid, latest_media_timestamp, awaiting_response_call_id
             try:
                 async for message in websocket.iter_text():
+
+
+                    data = json.loads(message)
+                    print(f"<<< [Twilio → Server] Event: {data.get('event')}")
                     if awaiting_response_call_id:
                         status, message = get_tool_message_status(awaiting_response_call_id)
                         if status == "completed":
@@ -130,11 +134,8 @@ async def handle_media_stream(websocket: WebSocket):
                                 "output": str(message)
                               }
                             }
-                            await openai_ws.send(json.dumps(event))
                             awaiting_response_call_id = None
-
-                    data = json.loads(message)
-                    print(f"<<< [Twilio → Server] Event: {data.get('event')}")
+                            await openai_ws.send(json.dumps(event))
                     if data['event'] == 'media' and openai_ws.open:
                         latest_media_timestamp = int(data['media']['timestamp'])
                         print(f"### Received media payload at {latest_media_timestamp}ms")
