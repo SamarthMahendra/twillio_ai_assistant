@@ -3,7 +3,7 @@
 import os
 import logging
 from celery import Celery
-import discord_tool
+from discord_tool import ask_and_get_reply
 import asyncio
 from mongo_tool import save_tool_message, query_mongo_db_for_candidate_profile
 
@@ -45,7 +45,7 @@ def tool_call_fn(self, tool_name, call_id, args):
     try:
         if tool_name == "talk_to_samarth_discord":
             logger.info("[Celery Worker] Calling discord_tool.ask_and_get_reply")
-            result = discord_tool.ask_and_get_reply(args["message"]["content"])
+            result = ask_and_get_reply(args["message"]["content"])
         elif tool_name == "query_profile_info":
             logger.info("[Celery Worker] Calling mongo_tool.query_mongo_db_for_candidate_profile")
             result = query_mongo_db_for_candidate_profile()
