@@ -530,7 +530,7 @@ script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
 
 script2_intial = """
  "Greet the user with , Hey there! I’m calling on behalf of Samarth Mahendra. 
-Um, I just wanted to check in and see if your team is currently hiring—or, y'know, open to exploring profiles right now.
+Um, I just wanted to check in and see if your team is currently hiring for SDE or, y'know, open to exploring profiles right now.
 """
 
 
@@ -563,7 +563,6 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 async def start_calls(request: Request):
     body = await request.json()
     numbers = body.get("numbers", ["+18577071671"])  # List of phone numbers
-
     results = []
     for number in numbers:
         try:
@@ -579,6 +578,7 @@ async def start_calls(request: Request):
             results.append({"to": number, "error": str(e)})
 
     return {"status": "done", "calls": results}
+
 
 
 if __name__ == "__main__":
