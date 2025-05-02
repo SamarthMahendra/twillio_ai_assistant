@@ -229,13 +229,17 @@ async def handle_incoming_call(request: Request):
     print(">>> [POST] /incoming-call - Incoming call received.")
     host = request.url.hostname
     # get script from url path
-    script1 = request.query_params.get("script1", 1)
+    script = request.query_params.get("script", "1")
+
+    print(">>> [POST] /incoming-call - Incoming call received. with ", script)
+
+
     print(f"### Host extracted from request: {host}")
 
     response = VoiceResponse()
 
     connect = Connect()
-    connect.stream(url=f'wss://{host}/media-stream?script={script1}')
+    connect.stream(url=f'wss://{host}/media-stream?script={script}')
     response.append(connect)
 
     print(">>> Returning TwiML response.")
@@ -276,7 +280,9 @@ async def handle_media_stream(websocket: WebSocket):
     await websocket.accept()
 
     # get script from url path
-    script = websocket.query_params.get("script", 1)
+    script = websocket.query_params.get("script", "1")
+
+    print(">>> WebSocket /media-stream received with ", script)
 
     web_socket_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17"
     async with websockets.connect(
@@ -443,7 +449,7 @@ async def handle_media_stream(websocket: WebSocket):
         await asyncio.gather(receive_from_twilio(), send_to_twilio())
 
 
-async def initialize_session(openai_ws, script=1):
+async def initialize_session(openai_ws, script="1"):
     print(">>> Initializing OpenAI Realtime session.")
 
     session_update = {
@@ -521,25 +527,30 @@ async def initialize_session(openai_ws, script=1):
 
 
 
-script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
-                    "I’ll be handling things on his behalf today. "
-                    "Feel free to ask me anything about his resume, projects, or experience. "
-                    "So… what can I help you with?'"""
+
 
 # "Hey there... I’m calling on behalf of Samarth Mahendra. "
 #         "He’s, like, this super thoughtful and talented engineer based in Boston. "
 #         "Um, I just wanted to check in and see if your team is currently hiring—or, y'know, open to exploring profiles right now.
 
-script2_intial = """
- "Greet the user with , Hey! Uh, you’re talking to Samarth Mahendra’s assistant. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
-"""
+
 
 
 
 async def send_initial_conversation_item(openai_ws, script):
+    script1_intial = """Greet the user with 'Hey there! I’m Samarth’s assistant"
+                        "I’ll be handling things on his behalf today. "
+                        "Feel free to ask me anything about his resume, projects, or experience. "
+                        "So… what can I help you with?'"""
+    script2_intial = """
+     "Greet the user with , Hey! Uh, you’re talking to Samarth Mahendra’s assistant. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
+    """
     print(">>> Sending initial AI message to start conversation.")
-    if script == 1:
+    if script == "1":
         script2_intial = script1_intial
+    else:
+        script2_intial = script2_intial
+    print("Using, ", script)
     await openai_ws.send(json.dumps({
         "type": "conversation.item.create",
         "item": {
