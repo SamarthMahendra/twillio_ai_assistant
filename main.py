@@ -888,7 +888,7 @@ async def send_initial_conversation_item(openai_ws):
 I help out with stuff — like, scheduling, sharing info, that kind of thing. 
 If you’re curious about his experience, projects, or, y’know, anything else — just ask. 
 I’m here to help, so… what can I do for you today?'"""
-    name = cache.get_key("name", '')
+    name = cache.get_key("name")
     script2_intial = f"""
      "Greet the user with , Hey {name}, is this a good time to talk ?! Uh, I’m calling on behalf of Samarth Mahendra. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
     """
