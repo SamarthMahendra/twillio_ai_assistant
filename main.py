@@ -836,7 +836,7 @@ async def initialize_session(openai_ws):
                 {
                     "type": "function",
                     "name": "end_call",
-                    "description": "Function to end the call after the conversation is done. example when it reaches voice mail end only after you are done talking completely.",
+                    "description": "Function to end the call after the conversation is done. example when it reaches voice mail end call after you say take care, Bye",
                     "parameters": {
                         "type": "object",
                         "properties": {
