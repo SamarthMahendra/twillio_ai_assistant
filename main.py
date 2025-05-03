@@ -736,6 +736,10 @@ async def handle_media_stream(websocket: WebSocket):
                         if response_json.get('output'):
                             for item in response_json['output']:
                                 if item.get('type') == 'function_call':
+                                    if item.get('name') == 'end_call':
+                                        print(f"### Ending call")
+                                        # close the websocket
+                                        await websocket.close()
                                     call_id = item.get('call_id')
                                     name = item.get('name')
                                     args = json.loads(item.get('arguments', '{}'))
@@ -825,6 +829,18 @@ async def initialize_session(openai_ws):
                             "timing": {"type": "string", "description": "Meeting time/date in ISO format"},
                             "user_email": {"type": "string",
                                            "description": "Email of the user scheduling the meeting (for invite)"}
+                        },
+                        "required": ["members", "agenda", "timing", "user_email"]
+                    }
+                },
+                {
+                    "type": "function",
+                    "name": "end_call",
+                    "description": "Function to end the call",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "end_call": {"type": "string", "description": "True or False, to end call after talking"},
                         },
                         "required": ["members", "agenda", "timing", "user_email"]
                     }
