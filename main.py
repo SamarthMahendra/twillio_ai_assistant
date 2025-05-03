@@ -55,7 +55,7 @@ def schedule_meeting(args):
 
     # ping samarth on discord about the meeting
     # celery_app.send_task("tool_call_fn", args=("talk_to_samarth_discord", None, {"action": "send", "message": {"content": f"Meeting scheduled with {', '.join(members)} on {timing} for {agenda}. Meeting link: {meeting_url}"}}))
-    tool_call_fn.delay("talk_to_samarth_discord", None, {"action": "send", "message": {"content": f"Meeting scheduled with {', '.join(name)} on {timing} for {agenda}. Meeting link: {meeting_url}"}})
+    tool_call_fn.delay("talk_to_samarth_discord", None, {"action": "send", "message": {"content": f"Meeting scheduled with {', '.join([name, user_email])} on {timing} for {agenda}. Meeting link: {meeting_url}"}})
     return {"meeting_url": meeting_url_full, "meeting_id": meeting_id}
 
 
