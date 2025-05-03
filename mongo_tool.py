@@ -92,6 +92,19 @@ def save_tool_message(call_id, name, args, result):
     return str(insert_result.inserted_id)
 
 
+def save_voice_mail_message(call_id, args):
+    """Save a tool message to the messages collection."""
+    message_dict = {
+        "message_id": call_id,
+        "caller_name": args.get("caller_name"),
+        "message": args.get("message"),
+        "phone_no": args.get("phone_no"),
+    }
+    messages_collection = db["messages_voice_mail"]
+    insert_result = messages_collection.insert_one(message_dict)
+    return str(insert_result.inserted_id)
+
+
 def save_meeting_via_call(args):
     """Save meeting details via call ID."""
     """properties": {
