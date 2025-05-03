@@ -195,7 +195,12 @@ Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
 When you speak, imagine you're having a relaxed conversation with someone you really care about—like chatting over coffee. Be warm, thoughtful, and emotionally present.
 Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
 Channel the voice: soft, intimate, emotionally rich. Speak with gentle inflection, a touch of curiosity, and a spark of wonder, as if you're discovering each thought in real time.
-You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human."""
+You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human.
+ collect meeting info before scheduling the meeting."""
+
+
+
+
 
 
 # default model : gpt-4o-mini-realtime-preview-2024-12-17
@@ -810,7 +815,7 @@ async def initialize_session(openai_ws):
                 {
                     "type": "function",
                     "name": "schedule_meeting_on_jitsi",
-                    "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. dont ask too much just schedule the meeting and don't need to ask for Samarth's availability",
+                    "description": "Function to Schedule a meeting with Samarth and others on Jitsi, store meeting in MongoDB, and send an email invite with the Jitsi link. ask for name, agenda, timing, and user_email",
                     "parameters": {
                         "type": "object",
                         "properties": {
