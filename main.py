@@ -935,9 +935,9 @@ async def start_calls(request: Request):
     name = body.get("name", "")  # Name to be used in the call
     results = []
     if name == "":
-        url = f"wss://twillio-ai-assistant.onrender.com/media-stream?script=2"  # 🔥 static full URL
+        url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2"  # 🔥 static full URL
     else:
-        url = f"wss://twillio-ai-assistant.onrender.com/media-stream?script=2&name={name}"  # 🔥 static full URL
+        url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2&name={name}"
     for number in numbers:
         try:
             call = twilio_client.calls.create(
