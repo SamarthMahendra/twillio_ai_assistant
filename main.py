@@ -254,12 +254,15 @@ async def handle_incoming_call(request: Request):
     host = request.url.hostname
     # get script from url path
     script = request.query_params.get("script", "1")
+    name = request.query_params.get("name", "")
 
     print(">>> [POST] /incoming-call - Incoming call received. with ", script)
 
     # add to redis with key as script
 
     cache.set_key("script", script)
+    cache.set_key("name", name)
+
 
 
 
@@ -881,12 +884,13 @@ async def initialize_session(openai_ws):
 
 
 async def send_initial_conversation_item(openai_ws):
-    script1_intial = """Greet the user with 'Hey! So, um, you’re talking to Samarth’s assistant. 
+    script1_intial = f"""Greet the user with 'Hey! So, um, you’re talking to Samarth’s assistant. 
 I help out with stuff — like, scheduling, sharing info, that kind of thing. 
 If you’re curious about his experience, projects, or, y’know, anything else — just ask. 
 I’m here to help, so… what can I do for you today?'"""
-    script2_intial = """
-     "Greet the user with , Hey! Uh, I’m calling on behalf of Samarth Mahendra. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
+    name = cache.get_key("name", '')
+    script2_intial = f"""
+     "Greet the user with , Hey {name}, is this a good time to talk ?! Uh, I’m calling on behalf of Samarth Mahendra. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
     """
     print(">>> Sending initial AI message to start conversation.")
 
@@ -927,14 +931,19 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 @app.post("/start-calls")
 async def start_calls(request: Request):
     body = await request.json()
-    numbers = body.get("numbers", ["+18577071671"])  # List of phone numbers
+    numbers = body.get("numbers", ["+18577071671"])# List of phone numbers
+    name = body.get("name", "")  # Name to be used in the call
     results = []
+    if name == "":
+        url = f"wss://twillio-ai-assistant.onrender.com/media-stream?script=2"  # 🔥 static full URL
+    else:
+        url = f"wss://twillio-ai-assistant.onrender.com/media-stream?script=2&name={name}"  # 🔥 static full URL
     for number in numbers:
         try:
             call = twilio_client.calls.create(
                 to=number,
                 from_=TWILIO_FROM_NUMBER,
-                url="https://twillio-ai-assistant.onrender.com/incoming-call?script=2"  # 🔥 static full URL
+                url=url  # 🔥 static full URL
             )
             results.append({"to": number, "sid": call.sid})
             print(f"✅ Calling {number}")
