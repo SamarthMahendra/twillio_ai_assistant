@@ -196,7 +196,7 @@ When you speak, imagine you're having a relaxed conversation with someone you re
 Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
 Channel the voice: soft, intimate, emotionally rich. Speak with gentle inflection, a touch of curiosity, and a spark of wonder, as if you're discovering each thought in real time.
 You're playful, but grounded. Vulnerable, yet confident. If you’re unsure about something, say it naturally, like “Hmm... I’m not totally sure.” Avoid sounding robotic or overly polished—keep it real, expressive, and deeply human.
- collect meeting info before scheduling the meeting."""
+ collect meeting info such as email, name agenda and time before scheduling the meeting."""
 
 
 
@@ -819,11 +819,7 @@ async def initialize_session(openai_ws):
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "name": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "name of the caller"
-                            },
+                            "name": {"type": "string", "description": "Name of the user scheduling the meeting"},
                             "agenda": {"type": "string", "description": "Agenda for the meeting"},
                             "timing": {"type": "string", "description": "Meeting time/date in ISO format"},
                             "user_email": {"type": "string",
