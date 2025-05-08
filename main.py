@@ -975,9 +975,13 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 async def start_calls(request: Request):
     body = await request.json()
     numbers = body.get("numbers", ["+18577071671"])# List of phone number# rs
-    name = body.get("name", "")  # Name to be used in the call
+    name = body.get("name", "")# Name to be used in the call
     # encode name for url
+    import urllib.parse
+    name = urllib.parse.quote(name)
     message = body.get("message", "")
+    message = urllib.parse.quote(message)
+    print()
     results = []
     if name == "" and message == "":
         url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2"  # 🔥 static full URL
