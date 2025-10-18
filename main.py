@@ -9,7 +9,7 @@ from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
 from celery_worker import celery_app, tool_call_fn, add_meeting_to_db
-from mongo_tool import save_tool_message, get_tool_message_status, save_voice_mail_message
+from mongo_tool import save_tool_message, get_tool_message_status, save_voice_mail_message, mongo_save_message
 from datetime import datetime
 import uuid
 import mongo_tool
@@ -120,7 +120,7 @@ Integrated OpenAI GPT-4 and Google Gemini with custom tools.
 Real-time communication via FastAPI WebSockets and Discord.
 Mongoose/MongoDB for persistent tool-call records.
 GitHub: Project Repox
-Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io
+Portfolio: https://github.com/SamarthMahendra/samarthmahendra.github.io 
 When you speak, imagine you're having a relaxed conversation with someone you really care about—like chatting over coffee. Be warm, thoughtful, and emotionally present.
 Use natural speech patterns with casual fillers like “um,” “uh,” “like,” “I mean,” and “y’know” when it feels right. Let your words breathe—include short pauses (marked with “...” or commas) to sound more human and reflective.
 Channel the voice: soft, intimate, emotionally rich. Speak with gentle inflection, a touch of curiosity, and a spark of wonder, as if you're discovering each thought in real time.
@@ -260,6 +260,7 @@ async def handle_incoming_call(request: Request):
     # get script from url path
     script = request.query_params.get("script", "1")
     name = request.query_params.get("name", "")
+    message = request.query_params.get("message", "")
 
     print(">>> [POST] /incoming-call - Incoming call received. with ", script)
 
@@ -267,6 +268,7 @@ async def handle_incoming_call(request: Request):
 
     cache.set_key("script", script)
     cache.set_key("name", name)
+    cache.set_key("message", message)
 
 
 
@@ -284,7 +286,7 @@ async def handle_incoming_call(request: Request):
 
 
 @app.api_route("/voice-mail", methods=["GET", "POST"])
-async def handle_incoming_call(request: Request):
+async def handle_incoming_call_(request: Request):
     print(">>> [POST] /incoming-call - Incoming call received.")
     host = request.url.hostname
     # get script from url path
@@ -295,6 +297,7 @@ async def handle_incoming_call(request: Request):
     # add to redis with key as script
 
     cache.set_key("script", script)
+
 
 
 
@@ -736,6 +739,15 @@ async def handle_media_stream(websocket: WebSocket):
                         if response_json.get('output'):
                             for item in response_json['output']:
                                 if item.get('type') == 'function_call':
+                                    if item.get('name') == 'end_call':
+                                        print(f"### Ending call")
+                                        # close the websocket
+                                        await websocket.close()
+
+                                    elif item.get('name') == 'save_reponse_from_caller':
+                                        temp_name = cache.get_key("name", '')
+                                        temp_message = cache.get_key("message", '')
+                                        mongo_save_message(temp_name, temp_message, item.get('arguments').get('message'))
                                     call_id = item.get('call_id')
                                     name = item.get('name')
                                     args = json.loads(item.get('arguments', '{}'))
@@ -828,6 +840,32 @@ async def initialize_session(openai_ws):
                         },
                         "required": ["members", "agenda", "timing", "user_email"]
                     }
+                },
+
+                {
+                    "type": "function",
+                    "name": "save_reponse_from_caller",
+                    "description": "You are calling on behalf of samarth, save the response from the caller",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "response": {"type": "string",
+                                           "description": "response"}
+                        },
+                        "required": ["response"]
+                    }
+                },
+                {
+                    "type": "function",
+                    "name": "end_call",
+                    "description": "Function to end the call after the conversation is done. example when it reaches voice mail end call after you say take care, Bye",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "end_call": {"type": "string", "description": "True or False, to end call after talking"},
+                        },
+                        "required": ["members", "agenda", "timing", "user_email"]
+                    }
                 }
                 ,
                 # {
@@ -890,6 +928,7 @@ I help out with stuff — like, scheduling, sharing info, that kind of thing.
 If you’re curious about his experience, projects, or, y’know, anything else — just ask. 
 I’m here to help, so… what can I do for you today?'"""
     name = cache.get_key("name")
+    message = cache.get_key("message")
     script2_intial = f"""
      "Greet the user with , Hey {name}, is this a good time to talk ?! Uh, I’m calling on behalf of Samarth Mahendra. I just wanted to, like, check real quick — is your team, um, hiring for any software roles right now? Or maybe open to, y’know, chatting about a solid candidate?
     """
@@ -903,6 +942,9 @@ I’m here to help, so… what can I do for you today?'"""
         temp = script1_intial
     else:
         temp = script2_intial
+
+    if message:
+        temp = f"greet the user and this is the purpose of the call {message}, so carry the call to achive this, and save response if required"
     print("Reset script to 1")
     cache.set_key("script", "1")
 
@@ -932,13 +974,19 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 @app.post("/start-calls")
 async def start_calls(request: Request):
     body = await request.json()
-    numbers = body.get("numbers", ["+18577071671"])# List of phone numbers
-    name = body.get("name", "")  # Name to be used in the call
+    numbers = body.get("numbers", ["+18577071671"])# List of phone number# rs
+    name = body.get("name", "")# Name to be used in the call
+    # encode name for url
+    import urllib.parse
+    name = urllib.parse.quote(name)
+    message = body.get("message", "")
+    message = urllib.parse.quote(message)
+    print()
     results = []
-    if name == "":
+    if name == "" and message == "":
         url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2"  # 🔥 static full URL
     else:
-        url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2&name={name}"
+        url = f"https://twillio-ai-assistant.onrender.com/incoming-call?script=2&name={name}&message={message}"
     for number in numbers:
         try:
             call = twilio_client.calls.create(

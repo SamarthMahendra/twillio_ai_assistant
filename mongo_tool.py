@@ -92,6 +92,19 @@ def save_tool_message(call_id, name, args, result):
     return str(insert_result.inserted_id)
 
 
+def mongo_save_message(name, message, response):
+    """Save a message to the messages collection."""
+    message_dict = {
+        "tool_name": name,
+        "message": message,
+        "response": response,
+        "timestamp": datetime.datetime.utcnow()
+    }
+    messages_collection = db["messages_personal"]
+    insert_result = messages_collection.insert_one(message_dict)
+    return str(insert_result.inserted_id)
+
+
 def save_voice_mail_message(call_id, args):
     """Save a tool message to the messages collection."""
     message_dict = {
