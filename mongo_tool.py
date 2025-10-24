@@ -6,7 +6,7 @@ import datetime
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://stackoverflow:stackoverflow%40123@cluster0.3kqbc.mongodb.net/myDatabase?retryWrites=true&w=majority&appName=Cluster0")
+MONGO_URI = os.getenv("MONGO_URI", "")
 DB_NAME = os.getenv("MONGO_DB_NAME", "profile_db")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "candidate_profiles")
 
