@@ -89,6 +89,18 @@ Debugged APIs using Datadog, reducing issue resolution time by 30%.
 Added image caching, reducing image load times by 70%.
 Wrote automated DB cleanup scripts to improve efficiency by 25%.
 PROJECTS & OUTSIDE EXPERIENCE:
+Orion:  Designed and implemented a dependency-aware task execution runtime in C++ that models computation as a dataflow DAG,
+enabling parallel task execution once dependency objects become available.
+• Built a custom dataflow scheduler that performs dependency tracking, readiness detection, and round-robin dispatch across
+background worker threads, using condition variables and mutex-protected queues to maximize CPU utilization.
+• Implemented a thread-safe in-memory object store with blocking and non-blocking reads and callback-driven task unblocking,
+providing deterministic coordination between producers and consumers without busy-waiting
+butterdb:  Built a TCP-based key-value database in C with a persistent, disk-backed B-Tree storage engine (page-level I/O, node splitting) supporting
+logarithmic-time lookups.
+• Implemented fine-grained concurrency using node-level locks, latch crabbing, and WAL synchronization to ensure correctness, durability
+required for synchronous replication in distributed environments.
+• Benchmarked and profiled under concurrent clients (~40K ops/sec, sub-ms p95), identifying contention hotspots and validating crash-recovery
+guarantees.
 Open Jobs - Analytics (Dec 2024 – Present), Boston, MA:
 Inspired by Levels.fyi; aggregates 500+ job postings.
 Built producer-consumer system with Celery, monitored via Prometheus and Grafana (99.9% uptime).
@@ -159,6 +171,19 @@ Debugged APIs using Datadog, reducing issue resolution time by 30%.
 Added image caching, reducing image load times by 70%.
 Wrote automated DB cleanup scripts to improve efficiency by 25%.
 PROJECTS & OUTSIDE EXPERIENCE:
+butterdb :  Built a TCP-based key-value database in C with a persistent, disk-backed B-Tree storage engine (page-level I/O, node splitting) supporting
+logarithmic-time lookups.
+• Implemented fine-grained concurrency using node-level locks, latch crabbing, and WAL synchronization to ensure correctness, durability
+required for synchronous replication in distributed environments.
+• Benchmarked and profiled under concurrent clients (~40K ops/sec, sub-ms p95), identifying contention hotspots and validating crash-recovery
+guarantees.
+Orion — Dependency-Aware Parallel Task Execution Framework (C++17) Boston, MA, USA
+• Designed and implemented a dependency-aware task execution runtime in C++ that models computation as a dataflow DAG, enabling
+parallel task execution once dependency objects become available.
+• Built a custom dataflow scheduler that performs dependency tracking, readiness detection, and round-robin dispatch across background
+worker threads, using condition variables and mutex-protected queues to maximize CPU utilization.
+• Implemented a thread-safe in-memory object store with blocking and non-blocking reads and callback-driven task unblocking, providing
+deterministic coordination between producers and consumers without busy-waiting
 Open Jobs - Analytics (Dec 2024 – Present), Boston, MA:
 Inspired by Levels.fyi; aggregates 500+ job postings.
 Built producer-consumer system with Celery, monitored via Prometheus and Grafana (99.9% uptime).
